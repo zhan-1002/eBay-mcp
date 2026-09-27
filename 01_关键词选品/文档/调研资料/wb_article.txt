@@ -1,0 +1,217 @@
+如何在 WorkBuddy 中使用 MCP Server？-腾讯云开发者社区-腾讯云 
+ hollyx 
+ 如何在 WorkBuddy 中使用 MCP Server？
+ 原创 
+ 关注作者 
+ 腾讯云 
+ 开发者社区 
+ 文档 建议反馈 控制台 登录/注册 
+ 首页 学习
+ 活动
+ 专区
+ 圈层
+ 工具
+ MCP广场 
+ 文章/答案/技术大牛 搜索 
+ 搜索 关闭 
+ 发布 
+ hollyx
+ 社区首页 > 专栏 > 如何在 WorkBuddy 中使用 MCP Server？ 
+ 如何在 WorkBuddy 中使用 MCP Server？
+ 原创 
+ hollyx 
+ 关注 
+ 发布 于 2026-06-25 15:55:00 
+ 发布 于 2026-06-25 15:55:00 
+ 5.3K 0 
+ 举报 
+ 摘要
+ WorkBuddy 的连接器功能基于 MCP 协议实现。本文介绍 MCP 与 WorkBuddy 的关系、如何在 WorkBuddy 中配置和使用 MCP Server，以及常用 MCP Server 的推荐。
+ 一、WorkBuddy 的连接器就是 MCP 功能
+ WorkBuddy 的 连接器（Connector） 功能，底层即采用 MCP（Model Context Protocol）协议实现。在 WorkBuddy 中添加和使用连接器，本质上就是在配置和使用 MCP Server。
+ 1.1 两种 MCP 使用方式
+ 在 WorkBuddy 中使用 MCP 工具，有两种方式：
+ 使用平台预置连接器 ：WorkBuddy 内置了多个常用服务的 MCP 连接器（如腾讯文档、乐享知识库等），可直接启用
+ 配置自定义 MCP Server ：如果用户有自己的 MCP Server（或来自 SkillHub MCP 广场），可以通过配置文件添加到 WorkBuddy
+ 二、使用平台预置连接器
+ WorkBuddy 已内置多个常用服务的 MCP 连接器，可以直接启用。
+ 2.1 查看可用连接器
+ 在 WorkBuddy 的设置界面中，找到"连接器"或"MCP"相关配置入口，即可看到当前可用的预置连接器列表。
+ 典型预置连接器包括：
+ 腾讯文档（Tencent Docs）
+ 乐享知识库（Lexiang）
+ 等其他平台集成的服务
+ 2.2 启用连接器
+ 在连接器列表中找到需要启用的服务
+ 按照提示完成授权（通常需要登录对应平台并授权 WorkBuddy 访问）
+ 启用后，WorkBuddy 即可在对话中调用该连接器提供的工具
+ 三、配置自定义 MCP Server
+ 如果你有自己的 MCP Server，或希望使用 SkillHub MCP 广场中的 MCP Server，可以通过配置文件将其添加到 WorkBuddy。
+ 3.1 配置文件位置
+ WorkBuddy 的 MCP 连接器配置文件通常位于：
+ 代码语言： txt
+ 复制
+ ~/.workbuddy/mcp.json
+ 3.2 配置格式
+ 在 mcp.json
+ 中，可以添加自定义 MCP Server 的配置。典型格式如下：
+ 代码语言： json
+ 复制
+ {
+ "mcpServers": {
+ "server-name": {
+ "command": "node",
+ "args": ["/path/to/mcp-server/index.js"],
+ "env": {
+ "API_KEY": "your-api-key"
+ }
+ }
+ }
+}
+ 具体配置参数取决于 MCP Server 的实现方式（stdio 模式或 HTTP 模式）。
+ 3.3 从 SkillHub MCP 广场获取 MCP Server
+ 如果你希望使用 SkillHub MCP 广场收录的 MCP Server：
+ 访问 SkillHub MCP 广场 
+ 浏览或搜索需要的 MCP Server
+ 查看该 MCP Server 的配置说明
+ 按照说明将其配置到 WorkBuddy 的 mcp.json
+ 中
+ 四、MCP Server 与 Skills 的区别
+ 在使用 WorkBuddy 时，可能会同时接触到 Skills 和 MCP Server 两个概念。
+ 对比维度
+ Skills
+ MCP Server（连接器）
+ 本质
+ AI 能力封装（提示词 + 流程）
+ 工具调用协议（标准化工具接口）
+ 安装方式
+ 通过 SkillHub CLI 或对话安装
+ 通过连接器配置或 mcp.json
+ 配置
+ 执行方式
+ 由 WorkBuddy 内部执行
+ 由外部 MCP Server 程序执行
+ 适用场景
+ 封装知识和操作流程
+ 提供标准化的工具调用能力
+ 两者可以组合使用：一个 Skill 内部可以调用已配置的 MCP 连接器提供的工具。
+ 五、安全注意事项
+ 在配置和使用 MCP Server 时，建议注意以下安全事项：
+ 5.1 了解 MCP Server 的来源
+ 优先选择来源明确的 MCP Server
+ 查看开发者的背景和可信度
+ 对于开源 MCP Server，可以查看其源代码仓库的活跃度
+ 5.2 MCP Server 的安全评估建议
+ 由于当前 MCP 生态尚未形成统一的安全认证体系，在配置和使用 MCP Server 前，建议：
+ 查看 MCP Server 的来源和开发者信息
+ 了解其权限申请和数据处理方式
+ 在隔离环境中先进行测试
+ 关注社区对该 MCP Server 的安全讨论
+ 补充说明 ：SkillHub 平台对上架的 AI Skills 执行三线并行安全审核机制（内容合规过滤、科恩实验室深度漏洞扫描、云鼎实验室 AI 模型安全评估）。但这一机制目前主要面向 Skill，而非 MCP Server。在选择 MCP Server 时，仍建议进行独立评估。
+ 六、常见问题
+ 6.1 如何确认 MCP 连接器已成功加载？
+ 在 WorkBuddy 对话中，可以尝试询问"你有哪些可用的工具？"或类似问题，WorkBuddy 应能列出已加载的 MCP 连接器提供的工具。
+ 6.2 自定义 MCP Server 无法连接怎么办？
+ 可以检查以下方面：
+ mcp.json
+ 配置格式是否正确
+ MCP Server 程序是否可以正常启动
+ 网络连接是否正常（对于远程 MCP Server）
+ 查看 WorkBuddy 的日志输出，确认错误信息
+ 6.3 可以同时启用多个 MCP 连接器吗？
+ 可以。WorkBuddy 支持同时配置和启用多个 MCP 连接器。每个连接器在 mcp.json
+ 中以独立的配置项存在。
+ 七、持续关注更新
+ WorkBuddy 和 MCP 生态都在快速发展中，建议持续关注：
+ WorkBuddy 官方更新 ：关注新版本中新增的连接器支持
+ SkillHub MCP 广场 ：浏览新收录的 MCP Server
+ MCP 协议动态 ：了解 MCP 协议的最新发展和最佳实践
+ 访问 SkillHub MCP 广场 ，浏览已收录的 MCP Server，或访问 WorkBuddy 官网 了解最新功能动态。
+ 原创声明：本文系作者授权腾讯云开发者社区发表，未经许可，不得转载。
+ 如有侵权，请联系 cloudcommunity@tencent.com 删除。
+ server 
+ 工具 
+ 配置 
+ MCP 
+ WorkBuddy 
+ 目录
+ 摘要 
+ 一、WorkBuddy 的连接器就是 MCP 功能 1.1 两种 MCP 使用方式 
+ 二、使用平台预置连接器 2.1 查看可用连接器 
+ 2.2 启用连接器 
+ 三、配置自定义 MCP Server 3.1 配置文件位置 
+ 3.2 配置格式 
+ 3.3 从 SkillHub MCP 广场获取 MCP Server 
+ 四、MCP Server 与 Skills 的区别 
+ 五、安全注意事项 5.1 了解 MCP Server 的来源 
+ 5.2 MCP Server 的安全评估建议 
+ 六、常见问题 6.1 如何确认 MCP 连接器已成功加载？ 
+ 6.2 自定义 MCP Server 无法连接怎么办？ 
+ 6.3 可以同时启用多个 MCP 连接器吗？ 
+ 七、持续关注更新 
+ 相关产品与服务
+ WorkBuddy
+ Tencent WorkBuddy（简称 WorkBuddy）， 是腾讯出品的全场景 AI 办公工作台，覆盖日常办公、代码开发与设计创意。用户以自然语言下达任务，WorkBuddy即可自主思考、拆解任务、规划执行步骤，最终交付可直接验收的工作结果。
+ 产品介绍 产品文档 
+ WorkBuddy企业版限时双倍 Credits 活动 
+ 社区
+ 技术文章 
+ 技术问答 
+ 技术沙龙 
+ 技术视频 
+ 学习中心 
+ 技术百科 
+ 技术专区 
+ 活动
+ 自媒体同步曝光计划 
+ 邀请作者入驻 
+ 自荐上首页 
+ 技术竞赛 
+ 圈层
+ 腾讯云最具价值专家 
+ 腾讯云架构师技术同盟 
+ 腾讯云创作之星 
+ 腾讯云TDP 
+ 关于
+ 社区规范 
+ 免责声明 
+ 联系我们 
+ 友情链接 
+ MCP广场开源版权声明 
+ 腾讯云开发者
+ 扫码关注腾讯云开发者 
+ 领取腾讯云代金券 
+ 热门产品
+ 域名注册 
+ 云服务器 
+ 区块链服务 
+ 消息队列 
+ 网络加速 
+ 云数据库 
+ 域名解析 
+ 云存储 
+ 视频直播 
+ 热门推荐
+ 人脸识别 
+ 腾讯会议 
+ 企业云 
+ CDN加速 
+ 视频通话 
+ 图像分析 
+ MySQL 数据库 
+ SSL 证书 
+ 语音识别 
+ 更多推荐
+ 数据安全 
+ 负载均衡 
+ 短信 
+ 文字识别 
+ 云点播 
+ 大数据 
+ 小程序开发 
+ 网站监控 
+ 数据迁移 
+ Copyright © 2013 - 2026 Tencent Cloud. All Rights Reserved. 腾讯云 版权所有 
+ 深圳市腾讯计算机系统有限公司  ICP备案/许可证号： 粤B2-20090059  粤公网安备44030502008569号 
+ 腾讯云计算（北京）有限责任公司 京ICP证150476号 |   京ICP备11018762号 
+ 问题归档 专栏文章 快讯文章归档 关键词归档 开发者手册归档 开发者手册 Section 归档

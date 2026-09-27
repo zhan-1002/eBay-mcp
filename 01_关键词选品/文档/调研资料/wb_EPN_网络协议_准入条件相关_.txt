@@ -1,0 +1,897 @@
+Network agreement | eBay Partner Network Skip to main content 
+ Our Program 
+ Why Partner With eBay? 
+ What is Affiliate Marketing? 
+ Featured Category Center 
+ Rate Card 
+ Resources 
+ Insights & Updates 
+ Special Business Models 
+ Audience Sharing Partners 
+ Network Status 
+ Help Center 
+ Payment Calendar 
+ Contact Us 
+ Solutions 
+ Build Ads & Campaigns 
+ Drive Traffic to Increase Revenue 
+ Monitor Performance & Optimize Results 
+ For Developers 
+ Getting Started 
+ Log In Sign Up 
+ Search 
+ Search all pages for “ ” 
+ Home 
+ Network Agreement
+ This eBay Partner Network Agreement (&ldquo; Agreement &rdquo;) is made by and between you (&ldquo; you &rdquo; or &ldquo; Affiliate &rdquo;) and eBay Partner Network, Inc. (&ldquo; EPN &rdquo;), a Delaware corporation with an address at 2145 Hamilton Ave., San Jose, CA 95125. This Agreement sets forth the terms and conditions applicable to your participation in EPN's affiliate network (the &ldquo; Network &rdquo;) pursuant to which you may earn performance-based compensation through approved promotional methods that display or direct end users to participating websites as described below.
+ By applying for or participating in the Network, you agree to be bound by the terms and conditions of this Agreement, including the addenda, exhibits, Program Details and policies set forth or referenced below,
+ which are incorporated by reference into this Agreement. 
+ This Agreement was published on the Network website on January 22, 2026. If you joined the Network on or after January 22, 2026, the terms set forth herein shall apply to you immediately. If you were already a partner of the Network on January 22, 2026, these terms will take effect for you on January 26, 2026.
+ Contents 
+ Definitions 
+ Registration and Your Account 
+ Performance 
+ Tracking and Reporting 
+ Compensation 
+ Privacy and Data 
+ Compliance, Audits, and Remedies 
+ Intellectual Property 
+ Confidentiality 
+ Term and Termination 
+ Representations, Warranties, and Disclaimer of Warranties 
+ Indemnification; Limitation of Liability 
+ Miscellaneous 
+ EXHIBIT A: Participation Requirements 
+ Guidelines and Accepted Promotional Methods 
+ Restricted Promotional Methods 
+ Prohibited Promotional Methods 
+ EXHIBIT B: eBay Partner Network Data Processing Addendum 
+ EXHIBIT C: Ambassador Program 
+ EXHIBIT D: Privacy Notice 
+ EXHIBIT E: Program Details 
+ Global Rate Card 
+ Buyer and Seller Initiated Offers 
+ Cost Per Click Programs 
+ Priority Listing Incentive 
+ EPN Exclusive Coupon Program 
+ Definitions: 
+ Advertiser: eBay Inc. or an eBay Corporate Family Member that elects to participate in the Network, as specified in the applicable Program Details. 
+ Affiliates: A company or individual entity that participates in the Network to earn compensation for Qualifying Transactions (or Qualifying Clicks, if applicable) . 
+ Agent: A sub-affiliate, sub-publisher, distribution partner or other similar third-party relationship through which an Affiliate participates in a Program. Agents are subject to EPN's prior written approval in accordance with Section III.C. 
+ Applicable Law: All national, state, and local (1) laws, ordinances, regulations, and codes and (2) orders, requirements, directives, decrees, decisions, judgments, interpretive letters, guidance and other official releases of any regulatory authority that apply to you or the performance of your obligations hereunder. 
+ eBay: eBay Inc. and eBay Corporate Family Members, collectively. 
+ eBay Corporate Family Member: An entity that controls, is controlled by or is under common control with eBay Inc. &ldquo;Control&rdquo; means possessing, directly or indirectly, the power to direct or cause the direction of the management, policies and operations of such entity, whether through ownership of voting securities, by contract or otherwise. 
+ EPN Data: Any non-public data or information (including but not limited to eBay Transaction Data, defined below) that is supplied by or made available by EPN in connection with your participation in the Network and/or a Program. 
+ eBay's Buy API Program: An approved EPN Program that permits Affiliates who have entered into an agreement with eBay, or an EPN approved third party, to display and facilitate the purchase of products through eBay's API. 
+ EPN Partner Portal: The online EPN portal through which Affiliates access transaction information, tracking tools, rate card information, and/or other information relating to the Network and/or Programs. 
+ Gross Merchandise Bought (&ldquo;GMB&rdquo;): The purchase price paid by a buyer for a Qualifying Transaction, excluding any shipping fees and taxes. 
+ Link: A link made available by EPN embedded by an Affiliate in a Promotional Method that allows an end user to click to Participating Sites and Content. 
+ Participating Sites and Content: Advertiser websites or content specifically designated or made available through an EPN program or toolkit that is intended to be promoted by Affiliates, as described in the applicable Program Details. 
+ Program: An EPN performance-based marketing program to promote Participating Sites and Content as set forth in the applicable Program Details. 
+ Program Details: Additional terms and conditions that govern an Affiliate&rsquo;s participation in a particular Program (available at https://partnernetwork.ebay.com/legal#program-details ). 
+ Promotional Content: Buttons, banners, widgets, text, Software Applications and other creative content that are used by Affiliates to promote Participating Sites and Content. 
+ Promotional Method: The methods by which Affiliates promote Participating Sites and Content, which may include Promotional Content. 
+ Promotional Tools: Tools or API platforms that may be provided by EPN or a third party that Affiliates may use to create their own Promotional Content. 
+ Qualifying Event: A specific end user action (e.g., click on a Link, activation of an Advertiser-related offer designated by EPN) that precedes and qualifies a Qualifying Transaction for compensation, as described in the applicable Program Details, Partner Portal, and/or the Global Rate Card below. 
+ Qualifying Transaction: A commissionable action preceded by a Qualifying Event, as described in the applicable Program Details, Partner Portal , and/or the Global Rate Card below. 
+ Software Application: A software application used or developed by an Affiliate to be used in a Promotional Method. 
+ Tracking Code: A tracking code provided by EPN that is embedded by Affiliate in Promotional Methods to track the Qualifying Events. 
+ Registration and Your Account: 
+ Registration: 
+ To participate in the Network, you must agree to the terms herein and register and be accepted by EPN to use the Network (registration page currently available at 
+ https://partner.ebay.com/ 
+ ). EPN will notify you if EPN accepts or rejects your application. EPN may in its sole discretion reject your application and terminate the Agreement for any reason without any compensation to you. Further:
+ You may not apply without EPN's prior written consent if EPN has previously terminated your account or if you are a vendor or agency of EPN. 
+ You may not register more than one account without prior written approval from EPN. 
+ You may not simultaneously be registered as an EPN Ambassador and any other EPN account type , unless expressly permitted in writing by EPN. 
+ You may not cancel your current account and register a subsequent account without prior written approval from EPN. 
+ EPN must accept your application before you may display any Promotional Content or deploy any Promotional Method. 
+ Accurate Information: You must provide EPN with and maintain complete and accurate account information (including your payment and tax information) and your Promotional Methods during your participation in the Network. You will reasonably cooperate with any inquiries by EPN to verify the accuracy of your registration and account information. 
+ Account Security: You are responsible for all activity on your Network account and for loss, theft or unauthorized disclosure of your password (other than as a result of EPN's gross negligence or willful misconduct). You must provide EPN with prompt written notification of any known or suspected unauthorized use of your account or breach of the security of your account. 
+ Your Relationship with EPN and Advertisers: Your participation in the Network or any Program does not constitute a direct contractual relationship between you and any Advertiser. However, Advertisers are explicitly designated as third-party beneficiaries to this Agreement in relation to rights they wish to rely upon or enforce against you. You may not misrepresent or embellish the relationship between EPN, any Advertiser, and you. 
+ eBay and eBay's Programs: Your eBay account must be in good standing at all times in order for you to participate in the Network. 
+ Performance: 
+ Program Details: The Program Details provide more information about Programs, Qualifying Events, Qualifying Clicks and Qualifying Transactions, and other terms of compensation that are applicable to any Program that you participate in. In the event of any conflict between any terms of this Agreement and the Program Details, the Program Details will control. 
+ Participation Requirements: Your use of any Links, Promotional Tools, Promotional Content, or Promotional Methods are subject to the Participation Requirements attached as EXHIBIT A. 
+ Agents: 
+ Use of any Agents requires EPN&rsquo;s prior written approval, which may be revoked at any time. 
+ You must ensure such Agents comply at all times with the Agreement, including applicable addenda and policies set forth or referenced below. You must document in writing their receipt and acceptance of such terms. 
+ You are limited to a single tier of Agent relationships. 
+ You may not work with Agents that have previously been terminated by EPN. 
+ You are responsible for your Agents&rsquo; activities in any Program. Any violation by your Agents of the Agreement shall constitute a violation by you. 
+ Your contract with your Agents shall hold EPN harmless from any liability, except where such liability is solely due to the willful, negligent or fraudulent conduct of EPN. 
+ Upon EPN's request you must provide documentation of all Agents&rsquo;: 
+ identifying information, which shall include: 
+ in the case of a natural person, the Agent&rsquo;s first and last name, physical address, country, telephone number, and email address; and 
+ in the case of corporations, partnerships, proprietorships, limited liability companies, agencies, or other legal entities, entity details and the first and last name, physical address, country, telephone number, and email address for the natural person or persons who own, manage or control the Agent; and unique tracking information. 
+ You must establish and maintain a functioning e-mail address or other internet-based mechanism for consumers to report complaints regarding any Agent and make best efforts to associate each complaint with the Agent that is the subject of the complaint. You must identify any Agent associated with any suspected violation of this Agreement. You must promptly investigate any complaints received through this mechanism and immediately terminate any Agent that you reasonably determine has engaged, or is engaging, in violations of Applicable Law or this Agreement. You must also provide to EPN all reasonable assistance to remedy any violations or infringements by your Agents. 
+ Tracking and Reporting: 
+ Tracking: You must include and maintain the Tracking Code provided to you by EPN within your Promotional Methods. You may not modify the Tracking Codes in any Promotional Methods. 
+ Access to Tracking and Reporting Tools: EPN may provide you with access to tracking and reporting tools and other support services. Data from such tools and services is not available on a real-time basis and may experience reporting delays. 
+ 3rd Party Platform Attribution Errors: EPN shall not be liable for any tracking or attribution issues (and the related payments) outside its control, including but not limited to: 
+ Actions by 3rd party platforms hosting your tracking links which interfere with Qualifying Event tracking; 
+ Browsers which redirect traffic directly to eBay properties and bypass your tracking links. 
+ Compensation: 
+ Qualifying Events: 
+ You will be compensated for each Qualifying Transaction (or Qualifying Click, if you participate in a CPC Program, defined below) in accordance with the applicable Program Details and Partner Portal. Compensation will be calculated by EPN based on EPN's tracking data at the end of each month. Affiliates shall provide EPN data reasonably requested by EPN to enable EPN to determine, in its sole discretion, which events qualify as Qualifying Events, Qualifying Clicks and Qualifying Transactions. Failure to provide the necessary data may result in events not qualifying as Qualifying Events, Qualifying Clicks or Qualifying Transactions, as applicable. You may only be paid once for each Qualifying Transaction (or Qualifying Click, if applicable). 
+ With respect to Qualifying Transactions, if an end user has generated multiple Qualifying Events from different Affiliates or Advertisers prior to a Qualifying Transaction, EPN shall only compensate the Affiliate whose Qualifying Event last preceded the Qualifying Transaction (unless the most recent Qualifying Event was generated by an Advertiser, in which case no compensation will be due to any Affiliate for such Qualifying Transaction). 
+ EPN has the right to change any Program Details (including but not limited to the Global Rate Card) in its sole discretion with three (3) days notice to you. For the Ambassador Program, EPN may change Program Details at any time without notice. This includes, without limitation, EPN instituting earnings caps for any Affiliates to limit the amount of compensation that an Affiliate can earn through the Program over a specified period of time (e.g., daily earnings cap). Such changes will apply only to activities occurring after the change. 
+ Payments: 
+ Timing: Subject to Section II.B (Accurate Information), each month, EPN will issue to you any positive balance in your account due for transactions reported for the previous month, so long as your account balance exceeds the required minimum account balance of 10 USD (or the equivalent sum in the applicable currency), or the banking fees applicable to the transactions, whichever is greater. The number or amount of transactions, credits for payments and debits for chargebacks as calculated by EPN shall be final and binding on you, unless validly disputed by you within sixty days of the applicable event. 
+ Form of Payment: When you join EPN, you can choose to be paid in one of the currencies listed in Section V(B)(3). If you do not select a currency, EPN will select one for you. The conversion rate will be determined in accordance with EPN's operating standards. 
+ EPN currently provides the opportunity to be paid in the following currencies: U.S. dollars (USD), British Pounds (GBP), Euros (EUR), Australian dollars (AUD), Canadian dollars (CAD), Norwegian krone (NOK), Israeli new shekel (ILS), Swedish krona (SEK), Singapore dollar (SGD), Danish krone (DKK), and Hong Kong dollar (HKD). EPN may offer you the option to be paid in other currencies not specified herein, and it may discontinue offering and issuing payments in any particular currency at any time. EPN may charge a currency conversion fee for payments made in currencies other than U.S. dollars (USD), British Pounds (GBP), Euros (EUR), Australian dollars (AUD), and Canadian dollars (CAD). 
+ Taxes: Each party is responsible for its own tax obligations under this Agreement pursuant to Applicable Law. EPN does not pay additional compensation to you for taxes. EPN may deduct or withhold any taxes that EPN may be legally obligated to deduct or withhold from any amounts payable to you under any Program. From time to time, EPN may request tax information from you. If EPN requests tax information from you and you do not provide it, EPN reserves the right (in addition to any other rights or remedies available to EPN) to hold your payment until you provide this information or otherwise satisfy EPN that you are not a person from whom EPN is required to obtain such tax information. 
+ Non-Payment, Withholding, Reversal and Chargebacks 
+ Notwithstanding anything to the contrary herein, EPN shall have no duty to pay you for Qualifying Transactions (or Qualifying Clicks, if applicable) during any current or previous month when you were in breach of this Agreement, unless you validly dispute that you were in breach, which EPN will evaluate reasonably. Such disputes must be submitted to EPN in writing within sixty days of the date the applicable payment was due, otherwise you waive such dispute. 
+ EPN may debit your account in an amount equal to a payment previously made to you or a compensation that has been credited to your account, but has not been paid yet, if EPN determines that there has been (a) any duplicate entry or other clear error; (b) non-bona fide transactions or other fraudulent activity; (c) a breach of, or other failure to complete or reversal of a Qualifying Transaction; (d) failure to comply with any terms of this Agreement; and (e) any activity that, in EPN's reasonable determination, harms the goodwill or reputation of EPN or an Advertiser. Unless you validly dispute such determination in writing within sixty days of the applicable debit, which EPN will evaluate reasonably, you waive the applicable dispute and the debit will be deemed final. 
+ Subject to this Section V, EPN will make commercially reasonable efforts to pay any positive balance that is due to you. In certain circumstances, based on EPN's records, it may not be possible for EPN to pay you because for a period of 24 months or more: (a) your account has been inactive, meaning that you have not logged into your account or you have not accepted funds, payments or other amounts that EPN has attempted to pay or deliver to you; (b) EPN has been unable to reach you, or has not received adequate payment instructions from you, after contacting you at the email address shown in EPN's records; or (c) you have not generated the minimum amount of commissions to qualify for payment. In these circumstances, EPN may, without further notice to you, turn the unpaid or undelivered amounts over to the applicable regulatory authorities in accordance with Applicable Law. 
+ Tracking and True-Up Payments 
+ In cases where EPN discovers that EPN has failed to capture all Qualifying Events, or when a determination was made by EPN pursuant to clauses V.D(1) or V.D(2) and resolved in your favor, EPN shall strive to determine the discrepancies between intended and actual Qualifying Events and conduct true-up payments, and either pay you for applicable amounts which were withheld or return debits made during a dispute period. If EPN deems appropriate, EPN may design a methodology for calculating true-up payments in EPN's sole discretion. 
+ Privacy and Data: 
+ EPN Transaction Data: In connection with your participation in the Network and the Programs, EPN may make available certain data relating to Qualifying Transactions (&ldquo; EPN Transaction Data &rdquo;). EPN Transaction Data is owned by eBay and is eBay Confidential Information. You may not use EPN Transaction Data other than for attribution purposes, performance analysis and optimization of Promotional Methods in connection with your participation in the Network, and for the avoidance of doubt, not for audience segmentation or retargeting. 
+ Affiliate&rsquo;s Compliance with Relevant Privacy Regulations 
+ You must maintain and post a privacy notice on your websites or applications that complies with Applicable Law, including full and accurate disclosure of: 
+ your collection, use and disclosure of user information, 
+ your use of third-party technology, including EPN's Tracking Code (if applicable), 
+ your use of cookies and options for discontinuing use of such cookies. 
+ If you provide EPN information regarding users or devices in connection with your participation in the Network, you will ensure that you have made any disclosures, and obtained any applicable consents, that may be required by Applicable Law in order for EPN to use such information to improve and operate the Network. You will not enable the Tracking Code unless you have made such disclosures and obtained such consents, where applicable. 
+ You and EPN each agree to comply with the respective privacy obligations applicable to it under Applicable Law. 
+ eBay Partner Network Data Processing Addendum: The terms of the eBay Partner Network Data Processing Addendum attached as EXHIBIT B are incorporated herein by reference, as may be updated from time to time. 
+ Use of EPN Data: You acknowledge and agree that EPN Data is owned by EPN, is EPN&rsquo;s Confidential Information, and you will only use EPN Data for the sole purpose of participating in the Network. You will immediately discontinue any use of EPN Data and destroy all EPN Data in your possession upon the earlier of (i) EPN's request or (ii) termination of your account from the Network (and, at EPN&rsquo;s request, provide written certification of the foregoing). 
+ Prohibited AI Uses: In no event will Partner (or Partner affiliates, subcontractors, or retained third parties) use any eBay Data for the purpose of training, pre-training, fine tuning, adapting, benchmarking, testing, validating or otherwise improving in any way a Supplier or third-party machine-based system that is designed to operate with varying levels of autonomy and that may exhibit adaptiveness after deployment, and that, for explicit or implicit objectives, infers, from the input it receives, how to generate outputs such as predictions, content, recommendations, or decisions that can influence physical or virtual environments. Supplier will not input or expose eBay Data to any foundation model, LLM, or generative AI service except with eBay’s prior written approval and only under a written contract with the AI provider that (i) prohibits training, retention (beyond transient processing), and disclosure, (ii) requires environmental segregation of eBay Data and prevents learning/persistence in model weights, and (iii) requires prompt deletion after processing. 
+ Compliance, Audits and Remedies: 
+ Right to Audit: EPN and its service providers have the right to audit your or your Agent&rsquo;s sites or activities in relation to your and your Agent&rsquo;s participation in the Network and the Programs. You agree to provide commercially reasonable assistance (at your own expense) to EPN as needed to conduct an audit. You shall not block or otherwise interfere with such audit, and EPN and its service providers may use proprietary tools to conduct such audit. To the extent not prohibited by Applicable Law, audits may include requests for documents and server logs related solely to your participation in the Network. Your failure to reasonably comply with EPN&rsquo;s efforts to audit your or your Agents&rsquo; compliance with this Agreement shall constitute a material breach of this Agreement. If Applicable Law does not allow you to share server logs with EPN, you must provide EPN with other proper proof of traffic that you sent to Participating Sites and Content. 
+ Remedy for Breach: If EPN believes that you or your Agents have breached this Agreement or that you or your Agents have engaged in fraudulent activity, in addition to any other remedy that may be available (e.g., specific performance, injunctive relief and/or attorneys&rsquo; fees, as applicable), it may: 
+ Issue a warning; 
+ Conduct an investigation; 
+ Suspend your account from participating in a specific Program or from the Network as a whole; 
+ Terminate your account from a specific Program or from the Network as a whole; or 
+ Withhold or recover any compensation. 
+ Suspension: If EPN suspends your account from the Network or a Program, you will no longer get paid for any future activity. You are required to immediately remove all Promotional Methods. EPN may reinstate your account in the event you have taken all necessary remedial actions. 
+ Appealing: If EPN determines you are in violation of any part of this Agreement, or if you have been suspended, you may appeal the decision and provide additional information to support your position by using this link: https://partnernetwork.ebay.com/resources/contact-support 
+ Intellectual Property: 
+ Promotional Content: When your application to the Network is accepted, EPN grants you a revocable, non-exclusive, non-transferable, worldwide, royalty-free license to display Promotional Content for the duration of your participation in a Program. 
+ Promotional Tools: When your application to the Network is accepted, EPN grants you a revocable, non-exclusive, non-transferable, worldwide, royalty-free license (unless otherwise specified in separate terms that you may agree to) to use the Promotional Tools that EPN makes available to you solely to facilitate your participation in the applicable Program. EPN reserves all rights in the Promotional Tools, including all intellectual property rights. 
+ Use of Your Marks: You authorize EPN and the Advertisers to use your trademarks, service marks, trade names, company names and copyrighted material to promote your participation in the Network. You may use eBay Marks in accordance with the eBay Brand Standard Guide, and as described in E.2 below. 
+ Feedback: You have no obligation to provide EPN with ideas for improvement, suggestions or other feedback in connection with your participation in the Network (collectively, &ldquo; Feedback &rdquo;). If, however, you provide any Feedback, you hereby grant to EPN a right and license to use, sell, reproduce, modify, distribute, sublicense, make available, publicly display and perform, disclose and otherwise exploit the Feedback without restriction or obligation. The foregoing right is non-exclusive, transferable, irrevocable, perpetual, worldwide, royalty-free and fully paid-up. 
+ Your Use of eBay Proprietary Rights: You acknowledge that you obtain no proprietary rights in EPN&rsquo;s or any eBay Corporate Family Member&rsquo;s trademarks, service marks, trade names, URLs, copyrighted material, patents and patent applications or other intellectual property (collectively, &ldquo; eBay IP &rdquo;), and agree not to challenge EPN&rsquo;s or any eBay Corporate Family Member&rsquo;s eBay IP rights in any way. You must not blur, dilute, tarnish or adversely affect EPN&rsquo;s or any eBay Corporate Family Member&rsquo;s eBay IP rights. 
+ Your company name, keywords for paid search, trademark, trade name, brand, domain name, or URL (specifically, any term before the third &ldquo;/&rdquo; of your URL) may not (a) incorporate in part or in full any of eBay&rsquo;s trademarks, trade names, company names, brands, domain names or URLs (including the translations and transliterations), any variations thereof, or any terms confusingly similar to any of the above; or (b) consist of a generic or descriptive term followed by &ldquo;Bay.&rdquo; You may not display your company name, branding or trademark in an uneven, staggered, multi-color format that invokes the distinctive multi-color eBay logo. 
+ Use of eBay Name and Logo: You may use the &ldquo;eBay&rdquo; name or logo in the name of a software tool or application only in accordance with the requirements below and subject to EPN&rsquo;s prior written approval: 
+ You may use &ldquo;eBay&rdquo; only in a descriptive manner. For example, &ldquo;eBay Fee Calculator&rdquo; is not acceptable while &ldquo;Fee Calculator for eBay&rdquo; would be acceptable. 
+ You must capitalize &ldquo;eBay&rdquo; as &ldquo;eBay&rdquo; or &ldquo;EBAY&rdquo; only. 
+ You may not combine a generic or descriptive name with the &ldquo;BAY&rdquo; prefix or suffix (e.g., &ldquo;CalculatorBay&rdquo; or &ldquo;eBaygle&rdquo;). 
+ You may not use eBay as a verb (e.g., &ldquo;eBaying&rdquo;). 
+ You may not modify any eBay logo provided to you by EPN. 
+ You may only use one color if you use block letters to display an eBay Corporate Family Member&rsquo;s name; multiple colors invoking the eBay logo is prohibited. 
+ You may not use the eBay logo within a sentence. 
+ Retention of Rights: Any and all proprietary rights, goodwill and other benefits and rights resulting from the use hereunder of trademarks, trade names or company name inures to the benefit of the owner. 
+ Confidentiality: 
+ Any information relating to EPN or Advertisers that EPN provides or make accessible to you in connection with the Network or any Program that is not known to the general public or that reasonably should be considered to be confidential is EPN&rsquo;s &ldquo;Confidential Information&rdquo; and will remain EPN&rsquo;s exclusive property. Any information You provide to EPN not known to the general public or that reasonably should be considered confidential shall be Your “Confidential Information”. Both Parties will use Confidential Information only to the extent reasonably necessary for performance under this Agreement and ensure that all persons or entities who have access to Confidential Information in connection with your account will be made aware of and will comply with the obligations in this provision. Neither Party will disclose Confidential Information to any third party (other than Agents bound by confidentiality obligations) and will take reasonable measures to protect the Confidential Information against any use or disclosure that is not expressly permitted in this Agreement. This restriction will be in addition to any non-disclosure agreement between the parties and will apply for the term of the Agreement and 5 years after termination. 
+ Term and Termination: 
+ Term: The term of this Agreement begins when you accept the terms of this Agreement at registration and shall continue until terminated in accordance with the terms of this Agreement. EPN&rsquo;s rejection of your application automatically terminates the Agreement. 
+ Termination by Affiliate: You may terminate this Agreement upon three (3) days written notice. 
+ Termination by EPN: 
+ Without Cause: EPN may terminate (i) this Agreement, (ii) your account, (iii) any of your Agents, (iv) your use of a Promotional Method, or (v) your participation in a certain Program, at any time in its sole discretion upon three (3) days notice. 
+ With Cause: EPN may terminate (i) this Agreement, (ii) your account, (iii) any of your Agents, (iv) your use of a Promotional Method, or (v) your participation in a certain Program, for cause with immediate effect. Incidents that may cause EPN to terminate this Agreement for cause include, but are not limited to: 
+ If EPN suspects that you or your Agent are responsible for the improper functioning of Links, Promotional Content or Promotional Tools, or if you otherwise interfere with or fail to properly maintain the Tracking Code. 
+ If a third party disputes your right to use any link, domain name, trademark, service mark, trade dress, or right to offer any service or good offered through any of your Promotional Methods. 
+ If EPN determines you are diluting, tarnishing, blurring or adversely affecting EPN&rsquo;s or an Advertiser's proprietary rights, brand or reputation. 
+ If EPN suspects that you or your Agent are engaging in deceptive practices or false advertising. 
+ If you engage an Agent who EPN has previously prohibited from participating in the Network. 
+ Modification and Termination of Programs: Programs (or portions of Programs) and Program Details may be discontinued or modified at the sole discretion of EPN at any time. 
+ Post-Termination: 
+ Upon termination, EPN will deactivate all accounts that are linked to you as a participant in the Network. You shall no longer accrue payments in your account, including but not limited to accruals relating to subsequent Qualifying Transactions (or Qualifying Clicks, if applicable), including where the Qualifying Events related to such Qualifying Transactions occurred prior to termination. If EPN terminates this Agreement for cause, you may not register for the Network again or participate in the Network as an Agent for another Affiliate. 
+ Subject to the payment terms in Section V(D), upon termination of this Agreement, EPN will pay any outstanding payments to you within ninety (90) days of the termination date, and you must pay EPN any outstanding debit balance within ninety (90) days of the termination date. Upon termination of this Agreement, you must immediately remove all Promotional Methods. Provisions of this Agreement that by their nature and context are intended to survive the termination of this Agreement (e.g., Confidentiality, Indemnification, Limitation of Liability, Miscellaneous, etc.), shall survive the termination of this Agreement to the extent that and as long as is necessary to preserve a party&rsquo;s rights under this Agreement that accrued prior to termination. 
+ Representations, Warranties, and Disclaimer of Warranties: 
+ Authority: You represent and warrant that you are over 18 years of age and authorized to consent to this Agreement (including on behalf of your company, if applicable). 
+ Compliance with Law: You represent and warrant that your participation in the Network is and shall be in compliance at all times with (1) Applicable Law and (2) the best practices in any jurisdiction in which you target your Promotional Methods. 
+ Non-Infringement Warranties: You represent and warrant that (1) you have all appropriate authority to operate and to provide the content on your website(s); (2) you have all appropriate authority to use any Promotional Method you may choose to use; and (3) any Promotional Content you create, your website(s), and your Promotional Methods do not and shall not infringe any third-party rights or eBay IP rights. 
+ Not Currently Under Investigation or Sanction: You warrant that: (a) you are not currently under order or investigation by any federal, state, local or international regulatory or law enforcement organization; and (b) you are not located in a country embargoed by the United States and you are not on the U.S. Treasury Department's list of Specially Designated Nationals. You must inform EPN if you become subject to any such order, investigation, embargo or designation at any point during your participation in the Network. 
+ Disclaimer of Warranties: TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, EPN DISCLAIMS ANY AND ALL WARRANTIES (EXPRESS, IMPLIED, STATUTORY OR OTHERWISE) IN CONNECTION WITH THE NETWORK AND ANY RELATED PROGRAMS, SERVICES, DATA, TOOLS, CONTENT AND MATERIALS, INCLUDING THE PARTICIPATING SITES AND CONTENT, PROMOTIONAL TOOLS AND TRACKING CODE (COLLECTIVELY, &ldquo; NETWORK SERVICES &rdquo;). WITHOUT LIMITING THE GENERALITY OF THE FOREGOING, ALL NETWORK SERVICES ARE PROVIDED &ldquo;AS-IS&rdquo; AND WITHOUT WARRANTIES OF ANY KIND, INCLUDING ANY WARRANTIES OF PERFORMANCE OR IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT, AND ANY WARRANTIES ARISING OUT OF ANY COURSE OF DEALING, PERFORMANCE OR TRADE USAGE. EPN DOES NOT MAKE, AND HAS NOT MADE, ANY REPRESENTATION OR WARRANTY THAT ANY PART OF THE NETWORK SERVICES ARE ACCURATE, COMPLETE, RELIABLE OR CURRENT OR THAT THE OPERATION OF ANY PART OF NETWORK SERVICES WILL PERFORM UNINTERRUPTED OR ERROR FREE OR AT ALL. EPN DOES NOT WARRANT OR GUARANTEE RESULTS OF USE OF THE NETWORK SERVICES AND SPECIFICALLY DISCLAIMS ANY WARRANTY THAT YOU WILL EARN ANY PARTICULAR AMOUNTS (OR ANY AMOUNTS AT ALL), OR ANY OTHER PARTICULAR BENEFITS WILL BE OBTAINED THROUGH THE USE OF THE NETWORK SERVICES. FOR THE AVOIDANCE OF DOUBT, EPN DISCLAIMS ANY AND ALL LIABILITY ASSOCIATED WITH EPN&rsquo;S INABILITY TO PROCESS QUALIFYING EVENTS, QUALIFYING CLICKS OR QUALIFYING TRANSACTIONS OR OTHERWISE PROVIDE ACCESS TO THE NETWORK SERVICES DURING ANY SERVER, SYSTEM, SITE, OR SERVICE OUTAGE (INCLUDING AS A RESULT OF ANY DENIAL OF SERVICE OR OTHER CYBER-ATTACK). 
+ Indemnification; Limitation of Liability: 
+ Indemnification: You shall defend, indemnify and hold harmless EPN and the Advertisers and their respective officers, directors, employees, corporate affiliates, subsidiaries, agents, and subcontractors (collectively, the &ldquo;Indemnified Party&rdquo;) against all claims, liabilities and expenses claimed or incurred by an Indemnified Party as a result of any third-party claim (collectively, for purposes of this Section XII.A, &ldquo;Claims&rdquo;) directly or indirectly arising from or related to (1) any breach by you or your Agents of this Agreement, (2) violation by you or your Agents of Applicable Law or third-party rights, (3) distribution or use of Promotional Methods by you or on your behalf (including but not limited to your use, display or distribution of Links, and your websites or other properties on which you place Links), (4) your participation in the Network or any Program(s), and (5) your taxes and duties or the collection, payment, or failure to collect or pay your taxes or duties, or the failure to meet tax registration obligations or duties. Should any Claim give rise to a duty of indemnification under this Section, the Indemnified Party shall promptly notify you and will reasonably cooperate with you at your expense in the defense of such Claim. The Indemnified Party will be entitled, at its own expense, to participate in the defense of such Claim. Should any Claim give rise to a duty of indemnification, you are obligated to participate in the defense of such Claim if requested to do so by the Indemnified Party. Participation in the defense shall not waive or reduce any of your obligations to indemnify or hold the Indemnified Party harmless. You shall not settle any Claim without the Indemnified Party&rsquo;s prior written consent, and you shall indemnify for any reasonable attorneys&rsquo; fees or other costs incurred by an Indemnified Party in enforcing this Section. 
+ Limitation of Liabilities: TO THE FULLEST EXTENT PERMITTED BY APPLICABLE LAW, ANY OBLIGATION OR LIABILITY OF EPN OR EBAY CORPORATE FAMILY MEMBERS UNDER THIS AGREEMENT WILL BE LIMITED TO THE TOTAL AMOUNTS PAID TO YOU UNDER THIS AGREEMENT DURING THE TWELVE MONTHS IMMEDIATELY PRECEDING THE DATE ON WHICH THE EVENT GIVING RISE TO THE MOST RECENT CLAIM OF LIABILITY OCCURRED. THE EXISTENCE OF ONE OR MORE SUCH CLAIMS WILL NOT ENLARGE THE LIMIT. YOU AGREE THAT NEITHER EPN NOR EBAY CORPORATE FAMILY MEMBERS WILL BE LIABLE TO YOU, OR ANY THIRD PARTY, FOR ANY CONSEQUENTIAL, EXEMPLARY, SPECIAL, INCIDENTAL OR PUNITIVE DAMAGES ARISING OUT OF OR IN CONNECTION WITH THIS AGREEMENT, INCLUDING BUT NOT LIMITED TO LOSS OF GOODWILL, LOST PROFITS, BUSINESS INTERRUPTION, LOSS OF PROGRAMS OR OTHER DATA, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES OR CLAIM. 
+ Remedies: No remedy or election shall be deemed exclusive but shall, wherever possible, be cumulative with all other remedies at law or in equity. 
+ Benefit of the Bargain: The provisions of this Section are an essential element of the benefit of the bargain reflected in this Agreement. 
+ Miscellaneous: 
+ Choice of Law/Attorneys&rsquo; Fees: This Agreement is governed by the laws of the State of California (USA), except for its conflict of law provisions. The exclusive forum for any actions related to this Agreement shall be in the state courts and, to the extent that federal courts have exclusive jurisdiction, in San Jose, California. The parties consent to such venue and jurisdiction, and waive any right to a trial by jury. The application of the United Nations Convention on the International Sale of Goods is expressly excluded. Your access or use of the Network where illegal is prohibited. You expressly waive and withdraw your rights under any law or statute conferring jurisdiction on the basis of nationality to courts other than the ones expressly designated above. 
+ English: You accept that the English versions of this Agreement shall be controlling in all respects. Translations of these documents that may be provided are for your convenience only. 
+ Amendment: EPN reserves the right to modify this Agreement at any time and in its sole discretion by posting a change notice and/or revised Agreement on this page (or successor page designated by EPN) or by sending notice of such modification to you by email to the primary email address then-currently associated with your Network account. The effective date of such change will be the date specified, which will be no less than two business days from the date the changes are posted or notice is provided (whichever is earlier). YOUR CONTINUED PARTICIPATION IN THE NETWORK FOLLOWING THE EFFECTIVE DATE OF SUCH CHANGE WILL CONSTITUTE YOUR ACCEPTANCE OF THE MODIFICATIONS. IF ANY MODIFICATION IS UNACCEPTABLE TO YOU, YOUR ONLY RECOURSE IS TO TERMINATE THIS AGREEMENT AS PROVIDED HEREIN. 
+ Assignment: Neither party may assign this Agreement without the prior written approval of the other party. Notwithstanding the foregoing, your consent shall not be required for EPN's assignment or transfer (1) due to operation of law, or (2) to an entity that acquires substantially all of EPN's stock, assets or business, or (3) to an Advertiser or other eBay Corporate Family Member (e.g., parent or subsidiary of parent). 
+ Force Majeure: EPN shall not be liable for any delay in performing or failure to perform its obligations hereunder, or for suspension or termination of Network Services under this Agreement, to the extent that and for so long as the delay, failure, suspension, or termination results from or is necessitated by any act, event, non-happening, omission or accident beyond its reasonable control (a "Force Majeure Event"). Force Majeure Events will include but not be limited to war, strikes, industrial action, lock outs, internet downtime, accidents, fire, blockade, import or export embargo or other international sanctions, terrorism or threat of terrorism, natural catastrophes or any other cause beyond EPN&rsquo;s reasonable control. 
+ Intended beneficiaries: Other than as explicitly set forth herein, there are no third-party beneficiaries to this Agreement. 
+ No Partnership or Joint Venture: You and EPN are independent contractors. Nothing in this Agreement shall be construed as creating a partnership, joint venture or agency relationship of any kind between the parties. Neither party shall have the authority or power to bind the other or to contract in the name of or create a liability against the other in any way or for any purpose. 
+ Notices: All notices must be in writing. Notices will be deemed given: (1) if delivered in person, upon receipt; (2) if delivered by registered mail, return receipt requested, or by an internationally recognized express mail carrier, upon delivery; or (3) if delivered by email, upon delivery. Email notice to EPN must be sent to epnhelp@ebay.com with a copy by mail to: eBay Partner Network, Inc., Attn: Legal Dept., 2145 Hamilton Avenue, San Jose, CA 95125. Notices may be sent to you via any of the methods described above according to the information provided by you in your account. 
+ Severability/No Waiver: If any provision of this Agreement is held by any court of competent jurisdiction to be illegal, null or void or against public policy, the remaining provisions of this Agreement shall remain in full force and effect. The parties shall in good faith attempt to modify any invalidated provision to carry out the stated intentions in this Agreement. The waiver of any breach of any provision under this Agreement by any party shall not be deemed to be a waiver of any preceding or subsequent breach, nor shall any waiver constitute a continuing waiver. 
+ Entire Agreement: This Agreement is the entire agreement between the parties pertaining to its subject matter and supersedes all prior written or oral agreements (including prior versions of this Agreement), representations, warranties or covenants between the parties with respect to such subject matter. 
+ EXHIBIT A: Participation Requirements 
+ To promote ethical and legal business practices, EPN requires that all Affiliates comply with these Participation Requirements (&ldquo; Participation Requirements &rdquo;). 
+ Contents 
+ Guidelines and Accepted Promotional Methods 
+ Restricted Promotional Methods 
+ Prohibited Promotional Methods 
+ Guidelines and Accepted Promotional Methods. Subject to the EPN Browser Extension Policy located at https://partnernetwork.ebay.com/page/browser-extension-policy-update and to the licenses granted in Section VIII of the Agreement: 
+ Links: EPN may provide you with Links to promote Participating Sites and Content. You may not modify a Link unless it is specifically designed to be modified, and then only within the parameters provided by EPN. If the Links you use are not dynamically updated, you must update the Links upon notification from EPN. 
+ Promotional Content: EPN may provide you with pre-approved Promotional Content. You may not modify any of this Promotional Content without obtaining EPN's prior written approval. For example, removing watermarks from (or otherwise editing) an image provided by EPN is prohibited unless you have received EPN's prior written approval. If you wish to create your own Promotional Content, you must first obtain EPN's prior written approval. If EPN requests, you must stop using any Promotional Content. All Promotional Content that you create must comply with the Agreement, these Participation Requirements, and any additional restrictions or guidance provided to you by EPN. 
+ Promotional Tools: EPN may provide you with Promotional Tools for creating your own Promotional Content (e.g., API access). You agree to: 
+ Obtain EPN's prior written approval if you create new tools and applications using the Promotional Tools. 
+ Use any Promotional Tools only in a lawful manner and only in accordance with the terms of this Agreement and any additional terms applicable to the Promotional Tool; 
+ Use any Promotional Tool only for the Participating Sites and Content for which it is intended. You may not use any Promotional Tools to drive transactions for any other sites or content; 
+ Not corrupt, modify or disable the Promotional Tools; and 
+ Not sell, redistribute, sublicense or transfer the Promotional Tools. 
+ Prior Consent: Unless expressly permitted under these Participation Requirements, all Promotional Methods are subject to EPN's prior written approval, which may be revoked in EPN's sole discretion at any time. You agree that you will immediately terminate any Promotional Method at any time at EPN's request. EPN's approval of any Promotional Method shall be limited to the Program for which it was approved. 
+ Clear and Not Deceptive: All Promotional Methods you use must be clearly recognizable as an advertisement for the relevant Participating Sites and Content and not deceptive. You must also secure permission before using any materials protected by third parties&rsquo; intellectual or proprietary rights (including without limitation copyrights, trademark rights, patent rights and rights of publicity). 
+ Social Media: You may use Links on social media sites that allow posting of affiliate marketing links. It is permitted to use URL shortening services offered by eBay (eBay.us), Bitly (Bit.ly), Google (Goo.gl and FDL), Hootsuite (Ow.ly), Buffer (Buff.ly) and Geniuslink (geni.us) to promote through your social media accounts. 
+ Disclosure about Relationship with EPN: Your Promotional Methods must clearly and prominently identify Promotional Content as advertising and, where required by Applicable Law, disclose your economic interest as a participant in EPN (e.g., &ldquo;As an eBay Partner Network Affiliate, I earn from qualifying purchases.&rdquo;). Except for this disclosure, and other than as required by Applicable Law, you will not make any public communication with respect to this Agreement or your participation in EPN without EPN&rsquo;s advance written permission. You will not misrepresent or embellish EPN&rsquo;s relationship with you (including by expressing or implying that EPN or any Advertiser supports, sponsors, or endorses you), or express or imply any other affiliation except as expressly permitted by this Agreement. More information regarding EPN&rsquo;s Affiliate Disclosure policy is available here . 
+ Personal Network: You may promote to your family members, relatives, and friends in accordance with the policies in these Participation Requirements. However, the products purchased must be used for their personal use, and not for resale. 
+ Search Engine Optimization Guidelines: Your domain name, title and description of your website and the metatags you use must be relevant to the Promotional Content and your website must only appear in a search engine&rsquo;s result when the content of your website relates to the applicable search query. Your search engine optimization methods must comply with guidelines or best practices published by the applicable search engine. 
+ Paid Traffic Sources: 
+ If you buy paid traffic, linking from paid placements or paid search placements to a non-Advertiser domain is allowed as long as you do not immediately or automatically redirect end users to Advertiser sites and services. Also, if you buy traffic to your sites through sponsored links, you must ensure that all campaigns add these domains to their list of excluded sites, and add &ldquo;eBay&rdquo; as a negative keyword. 
+ Linking from social media advertising methods (e.g., Facebook boosted posts) directly to the Advertiser&rsquo;s domain is permitted. 
+ Compliance with Applicable Laws: You are responsible to ensure that all marketing and advertising materials you use in participating in the Network comply with all Applicable Law. For example, local laws may require you to display base unit price (BUP), energy consumption labeling (EEK), and other specific information when advertising certain products via Product Listing Ads or similar methods, which you must comply with if applicable to you. 
+ Restricted Promotional Methods: You may not engage in the following Promotional Methods without the prior written approval of EPN. The application for approval can be found here . 
+ Incentive Programs: Your Promotional Methods may not directly or indirectly offer any reward or incentive for any Qualifying Event, Qualifying Click or Qualifying Transaction without EPN's prior written approval. Any subsequent change to an approved incentive program also requires EPN's prior written approval. 
+ Electronic Communications: You may not promote Participating Sites and Content using email or other forms of electronic communication (for example, SMS, instant messaging, or IRC) without EPN's prior written approval. If you are permitted to use such electronic communications: 
+ They must comply with the requirements of Applicable Law, such as the CAN-SPAM Act of 2003. 
+ EPN's or Advertiser's name may not appear in the &ldquo;from&rdquo; line of the message. 
+ Paid Traffic Sources: Without EPN's prior approval, you may not direct traffic from Promotional Content or Links served by ad networks or their agents directly to Advertiser sites and services. 
+ Software Applications: You will not promote Participating Sites and Content using Software Applications without EPN's prior written approval. Such Software Applications must comply with the additional terms in this Section. EPN reserves the right to immediately terminate any Software Applications at any time, with or without notice or cause. 
+ Installation Requirements: 
+ Your Software Application may be provided only to end users who affirmatively consent to install it. Your Software Application may not trick end users into installing it. 
+ Before your Software Application is installed, you must clearly and conspicuously disclose the principal and significant functions. 
+ If your Software Application collects or transmits personal information about end users, you must clearly and conspicuously disclose this information in understandable terms and offer a privacy policy that complies with Applicable Law. After you have made these disclosures, you must request an end user's consent to proceed with installation. 
+ EPN prohibits Software Applications installed in any type of bundle with other software of any kind without EPN's prior written approval. EPN shall determine in its sole discretion what functions constitute bundling, which may include installation bundling. For example, a function in a web browser software that affixes your company&rsquo;s site as the browser&rsquo;s start page would constitute a bundling arrangement between your company and the browser software. 
+ Your Software Application must be easy for end users to remove, using standard practices appropriate for the supported operating system(s) or other platform(s). 
+ Operation Requirements: Your Software Application may send a user to Participating Sites and Content via a Tracking Code only in an immediate response to a user's deliberate and voluntary click (or, for a touch-capable device, tap) on a clearly-labeled Link. Except for any perpetual search box, toolbar button, or similar mechanism that is on screen at all times, your Software Application may not present ads for any other sites, services, Advertisers, or offers when a user visits Participating Sites and Content or when Participating Sites and Content are open on a user's computer or mobile device. Your Software Application is prohibited if in EPN's sole discretion it is likely to confuse the end user or trick the end user into thinking the Software Application is part of the Participating Sites and Content. 
+ Advance Review and Approval by EPN: Before distributing any Software Application or participating in any Program, you must provide EPN with a complete statement of the characteristics of your Software Application. Before EPN provides its approval, you must integrate your Software Application with EPN so EPN may evaluate the integration and its effect on Advertisers&rsquo; brand and Advertisers&rsquo; customer experience. EPN will withhold all compensation for traffic directed through Software Applications not approved by EPN. If a new version of your Software Application makes material changes to your participation in the Network, you must provide EPN with a complete statement of such changes for written approval. For purposes of this Section, &ldquo;material changes&rdquo; include any change to the methods of installation of your Software Application, the partners who distribute your Software Application, or the circumstances in which your Software Application sends end users to Participating Sites and Content. 
+ Software Application Prohibited Behaviors: 
+ You may not promote the Network through any Software Application that provides, or purports to provide, sniping functionality; that automatically places bids on behalf of end users; or that automatically makes purchases on behalf of end users. 
+ You may not operate or distribute Software Applications through any Agents or other intermediaries. 
+ Subject to EPN's prior written approval, you may not use pop-ups, pop-unders, sliders, or sidebars to promote any Participating Sites and Content, nor may you modify the presentation or appearance of another web site as seen in a user's web browser. EPN may approve such practices if all such modifications are consistent with the user experience disclosed at the time of installation, if all modifications include clear and conspicuous labels disclosing the modification and provide a mechanism for end users to obtain details, if modifications are not likely to confuse end users, and if your offering in EPN's sole discretion genuinely delivers real and significant value to end users. 
+ Your Software Application may not attempt to evade testing, and may not attempt to conceal its practices. The practices of your Software Application should be consistent when run in a virtual environment, from varying IP addresses, and at varying times of day and days of the week. 
+ Worms, viruses, and trojan horses are strictly prohibited. 
+ Using Software Applications Provided by Others: If you contract, directly or indirectly, to use a Software Application provided by another person or entity, you are responsible for complying with the requirements of this Section exactly as if the Software Application were your own. 
+ Additional Restricted Promotional Methods: Any Promotional Method that is not expressly permitted or prohibited under these Participation Requirements is a Restricted Promotional Method and cannot be used without EPN's prior written approval. Examples of these include: 
+ Distribution of Promotional Content via Agents, distribution partners, or via ad networks; 
+ Promotional Content created by a developer&rsquo;s program tool or API, or holding in-person training and classes. 
+ Prohibited Promotional Methods: You may not engage in the following Promotional Methods: 
+ Cookie Stuffing: You may not stuff cookies or other tracking tags on an end user's computer without an affirmative action by the end user to interact with the Promotional Content. End users that only view your website, Promotional Content or advertisements, or merely allowing your applications to remain active or open, have not taken any affirmative actions. 
+ Non-Bona Fide Qualifying Events: You may not cause Qualifying Events, Qualifying Clicks or Qualifying Transactions to be made in bad faith, including but not limited to using invisible methods to generate impressions, clicks or transactions that are not initiated by the affirmative and genuine action of an end user, or using any cookie, device, program, robot, iframe or hidden frame, pop-up window or any other operation or process that interferes with EPN's ability to properly identify and track events. Any method that artificially generates clicks, impressions, or activity is prohibited. This includes, but is not limited to, clicks or impressions generated when you or your Agents click on your own Promotional Content containing Tracking Code, automated clicking tools or traffic sources, robots, or other deceptive software. To be considered valid, clicks and conversions must result from genuine user interest. EPN will use its sole discretion to determine instances of invalid activity. EPN is not obliged to disclose details about the functioning of EPN's fraud detection systems. 
+ Improper Influence: You may not make your own advertising claims. You may not interfere with or seek to improperly influence the referral of an end user to Participating Sites and Content. You may not mislead or trick an end user in any way into clicking on a Link. 
+ Middle Servers and URL Cloaking Services: You may not redirect any traffic to middle servers for the purpose of masking your referring source of traffic. This includes any URL shortening services other than the ones noted in Section I.F. 
+ Unacceptable Placements: 
+ Your Promotional Methods may not incorporate any topics that EPN in its sole discretion considers to fall in any of the following categories: 
+ sexually explicit materials 
+ violence 
+ firearms or weapons 
+ illegal goods, services or activities 
+ gambling or betting 
+ discrimination based on race, sex, religion, nationality, disability, sexual orientation, or age 
+ libel or defamation 
+ content aimed at children 
+ content that is misleading, obscene or hate-oriented 
+ sniping functionality (meaning the act of including Links in software or a service that automatically places bids or makes purchases on behalf of eBay members) 
+ malicious functionalities, such as malware or spyware 
+ Your Promotional Methods may not engage in misleading activities with respect to title and page description, search engine manipulation, the unlawful use of meta-tags, or otherwise in any manner that EPN in its sole discretion would consider to fall within any of the following categories: 
+ typo-squatting 
+ domain-parking 
+ banner-farming 
+ comment-spamming 
+ Your Promotional Methods may not violate the EPN Browser Extension Policy ( https://partnernetwork.ebay.com/page/browser-extension-policy-update ) or: 
+ serve a pop-up or pop-under for any Participating Sites and Content in connection with other pop-ups or pop-unders, except to the extent such pop-ups or pop-unders have been disclosed to and approved by EPN as part of a browser extension that was approved by EPN as a Software Application under Section II (Restricted Promotional Methods), above. 
+ contain dialers or any software that is automatically downloaded without express consent from the end user. 
+ Paid Traffic Sources: You may not purchase any keywords or search terms that (a) incorporate in part or in full any of eBay's trademarks (including without limitation eBay), trade names, company names, brands, domain names or URLs (including the translations and transliterations), or any variations thereof. 
+ Misdirection, Redirection and Framing: 
+ You may not make any express or implied representations, or otherwise create an appearance that a visitor to your website and/or Promotional Content is visiting Participating Sites and Content, for example, by framing or wrapping a site in any manner. You may not design your Promotional Methods in a way that, in EPN's sole discretion, creates a likelihood of confusion with the website, properties or emails belonging to the Advertiser. 
+ The URLs to which the Links direct end users must appear in the address line of the browser. 
+ The back button of the browser must be activated. 
+ You may not attempt to intercept or redirect traffic from or on, or divert compensation from, Participating Sites and Content or any other Affiliate. 
+ Promotional Content placed on an Advertiser website itself (for example, in your listings, your &ldquo;About Me&rdquo; page, or your store or eBay message boards), except to the extent such Promotional Content is an EPN approved browser extension that EPN approved as a Software Application under Section II (Restricted Promotional Methods), above. 
+ Redirecting end users from Advertiser sites and services to an Affiliate&rsquo;s website in order to induce the end user to click a Link back to the Advertiser site or service. 
+ EXHIBIT B: EPN Data Processing Addendum 
+ Click to open 
+ eBay Partner Network Data Processing Addendum 
+ This Data Processing Addendum and any applicable appendices or annexes
+ thereto (collectively, the &ldquo;DPA&rdquo;) is incorporated into and forms an integral part of the
+ eBay Partner Network Agreement (the &ldquo;Agreement&rdquo;) between you (&ldquo;Affiliate&rdquo;) and
+ eBay Partner Network, Inc. (&ldquo;EPN&rdquo;), each a &ldquo;party&rdquo; and together the
+ &ldquo;parties.&rdquo; This DPA replaces any previously applicable terms relating to their subject
+ matter. Capitalized but undefined terms used in this DPA will have the meanings assigned to those terms
+ in the Agreement. 
+ To the extent you are using the Services specified herein, you shall be
+ deemed to have accepted this DPA and applicable Standard Contractual Clauses upon acceptance of the
+ Agreement. 
+ DEFINITIONS 
+ &ldquo;Approved Addendum&rdquo; means the template
+ addendum issued by the United Kingdom Information Commissioner&rsquo;s Office and laid before the
+ United Kingdom Parliament in accordance with s119A of the Data Protection Act 2018 on 2 February
+ 2022, as it is revised under Section 18 of such addendum. 
+ &ldquo;Controller,&rdquo; &ldquo;Data Subject,&rdquo;
+ &ldquo;Process,&rdquo; &ldquo;Personal Data&rdquo; and &ldquo;Personal Data Breach&rdquo; have the
+ meanings as defined in the GDPR. 
+ To the extent that the CCPA is applicable, the definition
+ of &ldquo;Personal Data&rdquo; includes &ldquo;Personal Information&rdquo;; the definition of
+ &ldquo;Data Subject&rdquo; includes &ldquo;Consumer&rdquo;; the definition of
+ &ldquo;Controller&rdquo; includes &ldquo;Business,&rdquo; all as defined under the CCPA. 
+ To the extent that Non-EU Data Protection Laws are applicable,
+ definitions will have the meanings given under applicable law. 
+ &ldquo;Data Protection Laws&rdquo; means all laws and
+ regulations applicable to the Processing of Personal Data by the parties under the Agreement
+ including, but not limited to, the GDPR, UK GDPR, Non-EU Data Protection Laws, and any other
+ applicable data protection law. 
+ &ldquo;Non-EU Data Protection Laws&rdquo; means the California
+ Consumer Privacy Act, as amended by the California Privacy Rights Act (together, the
+ &ldquo;CCPA&rdquo;); the Virginia Consumer Data Protection Act (&ldquo;VCDPA&rdquo;); the Colorado
+ Privacy Act (&ldquo;CPA&rdquo;), the Connecticut Data Protection Act (&ldquo;CTDPA&rdquo;), the Utah
+ Consumer Privacy Act (&ldquo;UCPA&rdquo;); the Florida Digital Bill of Rights (&ldquo;FDBR&rdquo;);
+ the Oregon Consumer Privacy Act ("OCPA"); the Texas Data Privacy and Security Act
+ ("TDPSA"); the Montana Consumer Data Privacy Act (&ldquo;MTCDPA&rdquo;); the Canadian
+ Personal Information Protection and Electronic Documents Act (&ldquo;PIPEDA&rdquo;); the
+ Qu&eacute;bec's Act Respecting the Protection of Personal Information in the Private Sector
+ (&ldquo;Private Sector Act&rdquo;), the Brazilian General Data Protection Law (&ldquo;LGPD&rdquo;),
+ and the Argentina Personal Data Protection Act (&ldquo;APDPA&rdquo;). 
+ &ldquo;GDPR&rdquo; means the EU General Data Protection
+ Regulation 2016/679 and any national data protection laws made under or pursuant to such
+ regulation. 
+ &ldquo;UK GDPR&rdquo; means the EU General Data Protection
+ Regulation 2016/679 as incorporated into UK data protection laws. 
+ &ldquo;SCCs&rdquo; means with respect to data transfers
+ from the European Union to third countries that are not deemed adequate jurisdictions by the
+ European Commission, the Controller-Controller standard contractual clauses approved by the European
+ Commission, as may be updated from time to time ( the &ldquo;EU SCCs&rdquo;) or, with respect to
+ data transfers from the United Kingdom, the EU SCCs as further amended by the Mandatory Clauses of
+ the Approved Addendum, as may be updated by the United Kingdom Commissioner&rsquo;s Office from time
+ to time (the &ldquo;UK SCCs&rdquo;), or with respect to data transfers from Switzerland, the EU SCCs
+ as further amended below (the &ldquo;Swiss SCCs&rdquo;), for so long as this DPA is effective,
+ subject to the following: 
+ (i) &ldquo;data exporter&rdquo; means the party transferring the personal
+ data to the other party; 
+ (ii) &ldquo;data importer&rdquo; means the party receiving the personal
+ data; 
+ (iii) only the provisions pertaining to Module One are deemed applicable
+ under the EU SCCs; 
+ (v) the relevant annex of the EU SCCs, the UK SCCs, and the Swiss SCCs, as
+ applicable, is amended as set forth in Appendix A appended hereto, subject to the additional provisions
+ below; 
+ (vi) with respect to governing law and exclusive jurisdiction: 
+ the EU SCCs are governed by German law and subject to the
+ exclusive jurisdiction of the German courts; 
+ the UK SCCs are governed by the law of England and Wales and
+ subject to the exclusive jurisdiction of the courts of England; 
+ the Swiss SCCs are governed by Swiss law and subject to the
+ exclusive jurisdiction of the Swiss courts; 
+ (vii) with respect to the competent supervisory authority: 
+ for the EU SCCs, the competent supervisory authority referred
+ to in Clause 13 is the LDA Brandenburg; 
+ for the UK SCCs, the competent supervisory authority is the
+ Information Commissioner&rsquo;s Office; 
+ for the Swiss SCCs, the competent supervisory authority is the
+ Swiss Federal Protection and Information Commission; 
+ (viii) with respect to the Swiss SCCs, references in the EU SCCs to
+ &ldquo;Member State&rdquo; shall mean &ldquo;Switzerland&rdquo;, and references to &ldquo;GDPR&rdquo;
+ shall mean the &ldquo;Swiss Federal Act on Data Protection.&rdquo; 
+ &ldquo;Services&rdquo; means the services EPN performs or is
+ required to perform for Affiliate pursuant to the Agreement, including but not limited to providing
+ and maintaining the eBay Partner Network. 
+ SCOPE 
+ 2.1. Relationship of the Parties. Each party (a) is an independent
+ controller of the Personal Data under Data Protection Laws; (b) will individually determine the purposes
+ and means of its processing of Personal Data; and (c) will comply with the obligations applicable to it
+ under Data Protection Laws with respect to Personal Data. 
+ 2.2. Purpose of Processing. The parties acknowledge that in connection with
+ Affiliate&rsquo;s participation in the eBay Partner Network, Affiliate may share or receive Personal
+ Data in connection with its use of the Services (&ldquo;Services Data&rdquo;). The parties acknowledge
+ and agree that Affiliate may process the Services Data only for the purposes specified in the Agreement.
+ Subject to the foregoing, each party remains independently responsible for establishing its own legal
+ basis for the processing of the Services Data to the extent required by Data Privacy Laws. 
+ 2.3. Security. Each Party shall implement appropriate technical and
+ organizational measures to protect the Personal Data (i) from accidental or unlawful destruction, and
+ (ii) loss, alteration, unauthorized disclosure of, or access to the Personal Data (a "Security
+ Incident"). 
+ TRANSFERS OF PERSONAL DATA 
+ 3.1. General Obligations for Transfer of Data. Either Party may transfer
+ Personal Data to third countries if such transfer complies with the provisions for the transfer of such
+ data as set forth in applicable Data Privacy Laws. To the extent 4.4.c below applies, Affiliate
+ represents that they are able to act as an exporting controller of data whether by their organisation
+ being within the applicable jurisdiction (e.g., European Union, the United Kingdom, or Switzerland, as
+ applicable) or by being subject to categorization under Clause 13(a) of the SCCs as an organization
+ capable of acting as an exporter from the European Union or equivalent provision under the UK GDPR or
+ the Swiss Federal Act on Data Protection. 
+ 3.2. Transfers of European Union/United Kingdom/Switzerland Personal Data
+ to Affiliate. To the extent that EPN transfers Personal Data requiring a legal data transfer mechanism
+ to Affiliate and Affiliate is established in a country outside of the European Union, the United
+ Kingdom, or Switzerland (as applicable) that is not subject to an adequacy decision in the applicable
+ jurisdiction, then Affiliate will be deemed to have entered into the required SCCs as the data importer
+ with the relevant EPN party identified in Appendix A, Annex III as the data exporter, and such transfers
+ will be subject to those SCCs. 
+ 3.3. Transfers of European Union/United Kingdom/Switzerland Personal Data
+ to EPN. To the extent that Affiliate transfers Personal Data requiring a legal data transfer mechanism
+ to EPN, then Affiliate will be deemed to have entered into the required SCCs as the data exporter with
+ the relevant EPN Party identified in Appendix A, Annex III as the data importer, and such transfers will
+ be subject to those SCCs. 
+ 3.4. Transfers of Brazilian Personal Data. To the extent that a party
+ transfers personal data subject to the LGPD to the other party, then the transferring party will be
+ deemed to have entered into the required SCCs as the data exporter with the receiving party as the data
+ importer, and such transfers will be subject to those SCCs. With respect to EPN, such SCCs shall be
+ deemed to be entered into by the relevant EPN Party identified in Appendix A, Annex III. 
+ 3.5. Transfers of Swiss Personal Data. To the extent that a party transfers
+ personal data subject to the Switzerland Data Protection Law, the 2021 Standard Contractual Clauses form
+ part of this DPA and take precedence over the rest of this DPA for such transfer to the extent of any
+ conflict. 
+ 3.6. Transfers of Personal Data from Argentina to outside of Argentina. To
+ the extent that provision of the Services involves the transfer of personal data from Argentina to
+ outside of Argentina (either directly or via onward transfer) to a jurisdiction that does not have
+ adequate legislation in the terms of article 12 of Law No. 25,326 and its regulatory Decree No. 1558/01,
+ then the parties will be deemed to have entered into the required Argentinian Model Clauses, and such
+ transfers will be subject to those Model Clauses. The roles of the parties and the description of
+ transfers, for the purposes of Annex A to the Argentinian Model Clauses, is set out in Appendix
+ A. 
+ MISCELLANEOUS 
+ 4.1. Control/Application of the DPA. In the event of any conflict or
+ discrepancy between the SCCs, the Agreement, and the terms and conditions of this DPA, the following
+ order of precedence will apply: (a) the SCCs (where applicable), (b) this DPA, (c) the Agreement. This
+ DPA applies only to Affiliate and EPN and does not confer any rights to any third party hereunder. This
+ DPA does not replace any additional rights or obligations related to privacy or data security set forth
+ in the Agreement. 
+ 4.2. Treatment of Data Rights and Restrictions in the Agreement. Affiliate
+ agrees that this DPA does not enlarge any rights or restrict any obligations provided for in the
+ Agreement, and Affiliate continues to be limited to the data use rights and restrictions provided for
+ therein. 
+ 4.3. Limitations of Liability. This DPA in no way alters the limitations of
+ liability or other legal terms set out in the Agreement. 
+ 4.4. Governing Law. This DPA shall be governed by the laws of the
+ applicable jurisdiction in accordance with Section 1.k herein or as otherwise set forth under applicable
+ Data Protection Laws. In all other cases, this DPA shall be governed by the laws of the jurisdiction
+ stated in the Agreement. 
+ 4.5. Term and Termination. This DPA will continue concurrently with the
+ Agreement and will automatically terminate upon the termination of the Agreement. 
+ 4.6. Changes. From time to time, EPN may change this DPA as set forth in
+ the Agreement, including to reflect a change in the name or form of a legal entity; to comply with
+ applicable legal requirements (including regulatory guidance); to reflect EPN&rsquo;s adoption of an
+ alternate data transfer solution than the SCCs, provided such changes do not result in a material
+ degradation of the overall security of the Services, or otherwise have a material adverse impact on
+ Affiliate&rsquo;s rights under this DPA (as reasonably determined by EPN). 
+ APPENDIX A 
+ ANNEX I TO THE CONTROLLER-CONTROLLER SCCs 
+ MODULE ONE TRANSFER CONTROLLER TO CONTROLLER 
+ A. LIST OF PARTIES 
+ Data exporter(s): 
+ Name: EPN or Affiliate. The EPN entities which could be acting as the data
+ exporter(s) and controller(s) under the Agreement is/are the entities identified in Annex III that
+ transfer(s) personal data to the data importer. 
+ Address: 
+ EPN as Exporter(s): see Annex III 
+ Affiliate as Exporter: as specified in Affiliate&rsquo;s EPN account and/or
+ the applicable Agreement. 
+ Contact person&rsquo;s name, position and contact details: 
+ EPN as Exporter(s): see Annex III 
+ Affiliate as Exporter: as specified in Affiliate&rsquo;s EPN account and/or
+ the applicable Agreement. 
+ Activities relevant to the data transferred under these Clauses: Oversight
+ of common data protection program to assure uses of the transferred data are limited to the uses
+ described herein. 
+ Signature and Date: Deemed signed and effective as of the effective date
+ set forth in the Agreement or the date on which Affiliate otherwise accessed, enabled or utilized any of
+ Services, whichever is earlier. 
+ Role (controller)/processor): Controller: EPN and Affiliate, each acting as
+ an independent controller. 
+ Data importer(s): 
+ Name: EPN or Affiliate. The EPN entities which could be acting as the data
+ importer(s) and controller(s) under the Agreement is/are the entities identified in Annex III that
+ import(s) personal data pursuant to the SCCs. 
+ Address: 
+ EPN as Importer(s): see Annex III 
+ Affiliate as Importer: as specified in Affiliate&rsquo;s EPN account and/or
+ the applicable Agreement. 
+ Contact person&rsquo;s name, position and contact details: 
+ EPN as Importer(s): see Annex III 
+ Affiliate as Importer: as specified in Affiliate&rsquo;s EPN account and/or
+ the applicable Agreement. 
+ Activities relevant to the data transferred under these Clauses: Oversight
+ of common data protection program to assure uses of the transferred data are limited to the uses
+ described herein. 
+ Date: Deemed signed and effective as of the effective date set forth in the
+ applicable offering identification or the date on which Affiliate registered for the Services or
+ otherwise accessed, enabled or utilized any of the Services, whichever is earlier. 
+ Signature and Date: Deemed signed and effective as of the effective date
+ set forth in the Agreement or the date on which Affiliate otherwise accessed, enabled or utilized any of
+ Services, whichever is earlier. 
+ Role (controller/processor): Controller: EPN and Affiliate, each acting as
+ an independent controller. 
+ B. DESCRIPTION OF TRANSFER 
+ Categories of data subjects whose personal data is transferred 
+ Users that have interacted with a Promotional Method
+ (defined above) used by or on behalf of Affiliate in connection with its use of the Services; 
+ Employees or contractors of EPN and Affiliate. 
+ Categories of personal data transferred 
+ Unique identifier or other user-level data if provided by
+ the Affiliate in connection with the Services; 
+ Unique identifier or other user-level data if provided by
+ EPN in connection with the Services; 
+ With respect to employees or contractors of either party:
+ names, email addresses. 
+ Sensitive data transferred (if applicable) and applied restrictions or
+ safeguards that fully take into consideration the nature of the data and the risks involved, such as for
+ instance strict purpose limitation, access restrictions (including access only for staff having followed
+ specialised training), keeping a record of access to the data, restrictions for onward transfers or
+ additional security measures. 
+ None. 
+ The frequency of the transfer (e.g. whether the data is transferred on a
+ one-off or continuous basis). 
+ Transferred continuously. 
+ Nature of the processing 
+ Storing and analyzing data to carry out the purposes of
+ the data transfer. 
+ Purpose(s) of the data transfer and further processing 
+ To provide, improve and analyze the Network and the
+ Services; 
+ To provide transaction and analytics reporting; 
+ For billing, payment processing, and fraud prevention
+ purposes. 
+ The period for which the personal data will be retained, or, if that is not
+ possible, the criteria used to determine that period 
+ Affiliate as Importer: Affiliate will delete personal data on the
+ earlier of: (i) when required by EPN, (ii) when requested by the applicable data subject, (iii) when it
+ is no longer necessary for the Services, (iv) when Affiliate&rsquo;s participation in the Program is
+ terminated. 
+ EPN as Importer: EPN will retain personal data for as long as needed or
+ permitted in light of the purpose(s) for which it was obtained and consistent with applicable law. The
+ criteria used to determine EPN&rsquo;s data retention periods include: 
+ The length of time EPN has an ongoing relationship with the
+ data subject and/or customer; 
+ Whether there is a legal obligation to which EPN is
+ subject; 
+ Whether retention is advisable in light of EPN&rsquo;s legal
+ position. 
+ For transfers to (sub-)processors, also specify subject matter, nature
+ and duration of the processing 
+ EPN uses processors for storage and retention on a continuous
+ basis for the duration of the retention period. 
+ C. COMPETENT SUPERVISORY AUTHORITY 
+ As set forth in Section 1.j of the DPA. 
+ ANNEX II TO CONTROLLER-CONTROLLER 
+ TECHNICAL AND ORGANISATIONAL MEASURES 
+ Explanatory Note: 
+ The technical and organisational measures must be described in specific
+ (and not generic) terms. See also the general comment on the first page of the Appendix, in particular
+ on the need to clearly indicate which measures apply to each transfer/set of transfers. 
+ Description of the technical and organisational measures implemented by the
+ data importer(s) (including any relevant certifications) to ensure an appropriate level of security,
+ taking into account the nature, scope, context and purpose of the processing, and the risks for the
+ rights and freedoms of natural persons. 
+ The data importer has implemented measures at least equivalent to the
+ technical and organisational measures described below, in addition to any other measures specified in,
+ or supplied to EPN in connection with, the Agreement. 
+ Information Security Policy 
+ Importer has a documented information security policy which its personnel
+ are aware of and comply with. 
+ Organisation of Information Security 
+ Data Importer has organised its operations in such a manner that it is
+ clear as to which individual(s) in the Data Importer&rsquo;s organisation have responsibility for
+ information security. Data Importer defines, establishes and documents basic security processes to
+ include, but not be limited to: information risk assessments; incident response; patch management;
+ vulnerability monitoring; security awareness education and training for its personnel (as appropriate to
+ its operations). 
+ Data Importer has controls to reduce the risk associated when outsourcing
+ services, including but not limited to: specifying security and confidentiality requirements;
+ restricting subcontractor access to only those areas of the system(s) that are necessary to perform the
+ outsourced service(s), generating event logs on systems and networks that have been accessed; and
+ analysing the event logs. 
+ Physical and Environmental Security 
+ Data Importer executes measures necessary to limit the risk of operational
+ disturbance, theft, natural disasters and unauthorised access to data. 
+ Data Importer ensures that only authorised users have physical access to
+ the network, critical systems and applications, server rooms, communication rooms and work environments.
+ Data Importer provides secure protection for its physical facilities (e.g. through card readers, key
+ cards or a tended reception area). 
+ Communications and Operations Management 
+ To ensure the confidentiality, integrity and availability of data, Data
+ Importer applies proper security controls. 
+ 4.1 
+ Data Importer has controls in place to detect and prevent malicious code
+ from being executed on any system. These controls are regularly updated, and the most recent versions of
+ antivirus signatures are distributed as soon as reasonably practicable to ensure detection and
+ prevention of malicious attacks. 
+ 4.2 
+ Data Importer ensures that there are reasonable controls in place when
+ backing up data, such as event logs and reviews of those; the backup media is encrypted, where possible,
+ using strong encryption; backup restoration testing is performed regularly; and procedures are in place
+ to ensure backup media will operate in the event of an emergency. 
+ 4.3 
+ Data Importer ensures that all external entry points to network segments
+ containing data have access controls in place. 
+ 4.4 
+ Data Importer ensures that the databases and repositories containing data
+ are protected from unauthorised access by using appropriate authorisation controls. The databases and
+ connections to the databases are encrypted. 
+ 4.5 
+ Data Importer ensures that controls for the operating system and
+ applications are in place to prevent unauthorised access to system documentation. 
+ 4.6 
+ Data Importer has a secure electronic messaging system to prevent
+ unauthorised access. All incoming and outgoing emails are scanned. 
+ 4.7 
+ Data Importer has controls to prevent unauthorised access to external or
+ internet exposed applications and the information in those applications. 
+ Access Control 
+ Data Importer has in place formal processes and procedures to support the
+ secure creation, amendment and deletion of user accounts. 
+ 5.1 
+ Access is only granted to individuals needing access in order to perform a
+ certain role, function or responsibility. 
+ 5.2 
+ Data Importer ensures that access control mechanisms based on passwords are
+ enforced by automated means. 
+ 5.3 
+ Data Importer has controls in place that enable reviews of user access
+ rights with particular focus on &lsquo;privileged users&rsquo; (e.g. sys administrator). 
+ 5.4 
+ Data Importer ensures that remote access to systems and applications
+ containing data are governed by appropriate authentication (e.g. two-factor authentication), and that
+ such access is encrypted (e.g. VPN). 
+ 5.5 
+ Data Importer ensures that only authorised users can connect to wired or
+ wireless network segments, if such segments exist. 
+ 5.6 
+ Data Importer applies a level of security for its own wireless network that
+ is equivalent to the level of protection achieved using VPN. Traffic supports strong encryption and
+ strong authentication. 
+ 5.7 
+ Data Importer ensures that access to operating systems used to store or
+ process data use secure logon mechanisms. 
+ 5.8 
+ Data Importer has a policy in place to prevent the spread of information
+ from mobile computing such as portable computers and smartphones. 
+ External Operating of Applications and Maintenance of Software and
+ Services 
+ 6.1 
+ Data Importer has security controls of software, services and systems that
+ process or make data accessible. 
+ 6.2 
+ Data Importer has processes and systems for patch management (where
+ appropriate). 
+ 6.3 
+ Data Importer ensures that web-based products are reasonably protected
+ against attack. 
+ 7. Information Security Incident Management 
+ In order to maintain business operations Data Importer has a formalised
+ security incident handling process in place. 
+ 8. Business Continuity Management 
+ Data Importer ensures that Business Continuity Plans (BCP) and Disaster
+ Recovery Plans (DRP) are documented and tested on a regular basis to ensure operational continuity (to
+ the extent necessary for its operations). 
+ For transfers to (sub-) processors, also describe the specific technical
+ and organisational measures to be taken by the (sub-) processor to be able to provide assistance to the
+ controller and, for transfers from a processor to a sub-processor, to the data exporter 
+ Not applicable. 
+ ANNEX III TO CONTROLLER-CONTROLLER SCCs 
+ A. DATA EXPORTER(S) 
+ In providing the Services to Affiliate, the
+ following eBay entities may act as data exporter(s) under the relevant SCCs, as applicable: 
+ Name 
+ Address 
+ Data Protection Officer Contact 
+ Supervisory Authority (DPA) 
+ Role 
+ eBay GmbH 
+ Albert-Einstein-Ring 2-6, 14532 Kleinmachnow, Germany 
+ DPO Contact
+ Form 
+ Landesbeauftragte f&uuml;r den Datenschutz und f&uuml;r das
+ Recht auf Akteneinsicht Brandenburg 
+ (DPA of the German state of Brandenburg) 
+ Controller 
+ eBay (UK) Limited 
+ 1 More London Place, London, SE1 2AF, United Kingdom 
+ Company number; 03726028 
+ DPO Contact
+ Form 
+ Information Commissioner&rsquo;s Office (UK DPA) 
+ Controller 
+ eBay Marketplaces GmbH 
+ Helvetiastrasse 15/17, 3005 Bern, Switzerland 
+ DPO Contact
+ Form 
+ Eidgen&ouml;ssischer Datenschutz- und
+ &Ouml;ffentlichkeitsbeauftragter (Swiss DPA) 
+ Controller 
+ B. DATA IMPORTER 
+ In providing the Services to Affiliate, the
+ EPN entity listed below will act as a data importer under the relevant SCCs: 
+ Name 
+ Address 
+ Data Protection Officer Contact 
+ Role 
+ eBay Partner Network Inc. 
+ 2145 Hamilton Avenue, San Jose, CA 95125, United States of
+ America 
+ DPO Contact
+ Form 
+ Controller 
+ EXHIBIT C: Ambassador Program 
+ The Ambassador Program contains EPN-curated listings (&ldquo;Eligible
+ Ambassador Listings&rdquo;) designed to help you drive user engagement with Links through your Promotional
+ Methods (the &ldquo;Ambassador Program&rdquo;). 
+ The following terms apply to your participation in the Ambassador
+ Program: 
+ You must register (and be accepted) as a Network
+ Affiliate and opt in to the Ambassador Program via the Partner Portal. 
+ Following your acceptance into the Ambassador Program,
+ you may access Eligible Ambassador Listings and the applicable estimated commissions via the Ambassador
+ Portal, and the applicable commission rates via the Partner Portal (&ldquo;Ambassador Rate Card&rdquo;).
+ The Ambassador Portal may estimate commissions based on current item prices and other promotional
+ elements, but compensation will be calculated only on final sale prices and promotional eligibility,
+ which may cause compensation to vary from those estimates. 
+ The list of Eligible Ambassador Listings may change from
+ time to time. Only Eligible Ambassador Listings that sold while they were available via the Ambassador
+ Portal (or other portal made available by EPN in connection with the Ambassador Program) as Eligible
+ Ambassador Listings will be considered Qualifying Transactions (such transactions, &ldquo;Qualifying
+ Ambassador Transactions&rdquo;). 
+ Qualifying Ambassador Transactions are payable based
+ solely on the Ambassador Rate Card, which may change from time to time. 
+ Qualifying Ambassador Transactions are otherwise subject
+ to the same criteria as Qualifying Transactions. 
+ If you are participating in the Ambassador Program, you may
+ not simultaneously participate in any other EPN Program. For the avoidance of doubt, you will not be
+ compensated more than once, or under any other EPN Program, for a Qualifying Ambassador
+ Transaction. 
+ EXHIBIT D: Privacy
+ Notice 
+ EXHIBIT E: Program Details 
+ Participating Sites and Content*: 
+ Country 
+ Participating Site and Content 
+ Australia 
+ www.ebay.com.au 
+ Austria 
+ www.ebay.at 
+ Belgium 
+ www.ebay.be 
+ Canada 
+ www.ebay.ca 
+ France 
+ www.ebay.fr 
+ Germany 
+ www.ebay.de 
+ Ireland 
+ www.ebay.ie 
+ Italy 
+ www.ebay.it 
+ Netherlands 
+ www.ebay.nl 
+ Poland 
+ www.ebay.pl 
+ Spain 
+ www.ebay.es 
+ Switzerland 
+ www.ebay.ch 
+ United Kingdom 
+ www.ebay.co.uk 
+ United States 
+ www.ebay.com 
+ *EPN may, in its sole discretion, add or remove countries and websites from this
+ list of Participating Sites and Content. 
+ Program Description: Directing end users to
+ Participating Sites and Content in exchange for a percentage of GMB, or 
+ participating in eBay's Buy API Program in exchange for a percentage of GMB associated with
+ an end user's purchase of products or services through your implementation of eBay's Buy API
+ Program. 
+ Global Rate Card: 
+ Please note there may be exceptions to the rate card above for certain 
+ Affiliates based on business model or other special
+ circumstances. 
+ EPN may modify your specific pricing, earning caps, and any other compensation
+ terms at any time by providing three (3) days&rsquo; notice to you. Should a Force Majeure Event affect the
+ Rate Card applicable to you, EPN may modify your specific pricing, earning caps, and any other compensation
+ terms effective immediately without providing you advance notice. Your specific pricing will be reflected in
+ the EPN Partner Portal. In the event of a discrepancy between this Rate Card and the pricing reflected in
+ the EPN Partner Portal, the pricing indicated in the EPN Partner Portal will govern. 
+ Payment Structure for Qualifying Transactions: 
+ A Qualifying Transaction occurs when an end user completes an attributable purchase
+ within 24 hours following a Qualifying Event. For &ldquo;Buy It Now&rdquo; items (including via eBay 
+ &rsquo;s Buy API Program), the Qualifying Event is a click on your
+ Promotional Content within 24 hours preceding that user&rsquo;s purchase of the relevant item. For auction
+ items, the Qualifying Event is a user bidding on an auction within 24 hours after clicking on your
+ Promotional Content for that item; the Qualifying Transaction is that user winning such auction via 
+ such bid within 10 days of the applicable Qualifying Event. 
+ For purchases of eligible subscriptions from an Advertiser, the Qualifying Event is a click on
+ your Promotional Content for that subscription within 24 hours preceding that user signing up for the applicable subscription; the Qualifying Transaction is
+ that user completing signup for the applicable subscription , provided however, no compensation will be due until that user
+ has made its initial subscription payment for the 
+ applicable subscription based service. For any Qualifying
+ Transactions for item purchases, you receive a percentage of the GMB for that attributable transaction , based on the category-level commission rates shown in
+ the Global Rate Card. Note that there are certain items and categories for which Advertisers earn low or no
+ revenue; in such cases, you will therefore earn low or no revenue share. These items and categories may
+ include, but are not limited to: gift cards, items sold by charities, and special promotional deals. You may
+ only be paid once for each Qualifying Transaction. 
+ The applicable rate for a Qualifying Transaction for a &ldquo;Buy It
+ Now&rdquo; item is based on the applicable Rate Card in effect at the time of that Qualifying Transaction
+ (i.e., at the time of sale). The applicable rate for a Qualifying Transaction for a non-&rdquo;Buy It
+ Now&rdquo; item is based on the applicable Rate Card in effect at the time of the applicable Qualifying
+ Event. 
+ The following additional terms apply to attribution on Qualifying Transactions for non- &rdquo;Buy It
+ Now&rdquo; items: 
+ Auctions: If an end
+ user clicks on a Link, bids on an auction within 24 hours of such click but does not win the auction via
+ such bid, then returns to the applicable auction at a later date, bids on the same item being auctioned, and
+ wins such auction, then EPN shall attribute the Qualifying Transaction to the applicable click associated
+ with the initial bid placed on such item ID, provided that such initial bid occurred within thirty (30) days of the auction win and regardless of any
+ subsequent clicks on Links from different Affiliates or the applicable Advertiser conducting any promotional
+ activities subsequent to such click and prior to the auction win. 
+ Multi BIN sales: If
+ an end user completes a Qualifying Transaction on a &ldquo;Buy It Now&rdquo; item, then all purchases by the
+ same end user of the same item ID for thirty (30) days from the initial click on your Promotional Content
+ shall be attributed to you, regardless of other subsequent referring clicks for the same end user on the same item ID. The
+ same rate of commission will be applicable as was applied to the first Qualifying Transaction. 
+ Buyer and Seller Initiated Offers: 
+ Best Offer: Within 24 hours of clicking a Link, if
+ an end user initiates an offer with any Seller directly, a sequence of offers and counteroffers may
+ commence. Upon receipt of an offer initiated by such end user (regardless of who initiated the offer
+ sequence, a &ldquo;Buyer&rdquo;), a seller has up to twenty-four (24) hours to either accept or make a
+ counteroffer. If the seller makes a counteroffer, Buyer then has up to an additional 24 hours to accept or
+ propose a counteroffer. Buyer and seller each may make a total of 5 offers (including counteroffers). As
+ long as each subsequent offer is made within 24 hours of the previous offer, and the total offers do not
+ exceed 5 by either party, the commission shall be earned when an offer or counteroffer is accepted that
+ results in a Qualifying Transaction by that Buyer (and, for clarity, the 
+ initial offer is the Qualifying Event) . If an offer is not accepted
+ within the applicable 24 hour period, or if the total number of offers (including counters) by either party
+ exceeds 5, then no commission shall be earned. 
+ Seller Initiated offer: Within 24 hours of an end
+ user clicking a Link, if a seller initiates an offer directly to that Buyer, a sequence of counteroffers may
+ commence that may result in a Qualifying Transaction, as follows: once the initial seller offer is
+ presented, the Buyer has up to 48 hours to either accept or make a counteroffer. If the offer is accepted
+ and payment made, a Qualifying Transaction is recorded. If a counteroffer is presented by the Buyer, the
+ seller has up to 48 hours to accept or make another offer. Seller and Buyer each may make up to 5 offers
+ (including counters), and the commission shall be earned when an offer is accepted within the applicable 48
+ hour response period resulting in purchase and payment for the applicable item by the Buyer (and, for clarity, the initial offer is the
+ Qualifying Event) . If an offer is not accepted within the applicable 48 hour
+ period, or if the total number of offers (including counters) by any party exceeds 5, then no commission
+ shall be earned. 
+ Cost Per Click Program: 
+ EPN may, in its sole discretion, offer to allow you to participate in a Program
+ that involves payment based upon a c ost -p er -c lick model
+ rather than payment based upon end user transactions successfully completed (a &ldquo;CPC Program&rdquo;).
+ In the event that you are invited to participate in such a P rogram, the rate card governing your participation (your &ldquo;CPC Rate Card &rdquo;) shall be
+ reflected in the EPN Partner Portal. If you participate in the CPC Program: 
+ A CPC Program Qualifying Click (&ldquo;Qualifying Click&rdquo;) occurs when a valid
+ (as determined by EPN in its sole discretion) end user clicks a Link that has been authorized for use in a
+ CPC Program. No payment will be due for invalid clicks. For any Qualifying Click, you will receive the
+ cost-per-click fee set forth in the CPC Rate Card reflected in the EPN Partner Portal. Note that the scope
+ of the CPC Program may be more limited than the normal Affiliate Program described above and certain items
+ and categories may not be included in the CPC Program. You may only be paid once for each Qualifying Click;
+ no duplicate payments will be made. For clarity, in the event of any conflict between the CPC Program and
+ the Global Rate Card or any defined term above, these Cost Per Click Program terms shall control. 
+ Priority Listing Incentive: 
+ EPN may, in its sole discretion, offer additional compensation to selected
+ Affiliates when such Affiliates (i) promote (via Promotional Content) certain EPN-designated items and
+ listings (&ldquo;Priority Listing(s)&rdquo;) and (ii) such Promotional Content results in a Qualifying
+ Transaction of the Priority Listing(s) during the promotional period of such listings (&ldquo;Qualifying Priority Listing Transaction&rdquo;).
+ Tracking and attribution of Qualifying Priority Listing Transactions will be based on EPN's tracking and
+ attribution data, which is definitive and shall control in the event of any dispute. The specific
+ compensation details offered to the selected participating Affiliates will be made available in the EPN
+ Partner Portal. Subject to the terms of the Agreement, EPN may modify the terms and compensation of any
+ Priority Listing Incentive, as may be described here and via the EPN Partner Portal. 
+ EPN Exclusive Coupon Programs: 
+ From time-to-time EPN may invite you to participate in a curated "Coupon
+ Event." You will be able to review and join, or decline to join, the specific Coupon Event. During the
+ time period specified in the Coupon Event ("Coupon Period"), EPN shall make Links available for
+ incorporation into your approved Promotional Methods allowing end users to use promotional codes on
+ Participating Sites and Content ("Coupons"), and these Coupons will be redeemable by qualifying
+ recipients during the period of validity specified in the Coupon Event ("Coupon Valid Dates"). The
+ Coupons can be applied to the purchase of specific items or items within certain designated categories
+ ("Coupon Eligible Items") and expire at the end of the Coupon Valid Dates. Once a qualifying
+ recipient has clicked a Coupon Link, they will have twenty four (24) hours in which to redeem the Coupon
+ before that Coupon expires, regardless of the Coupon Period or Coupon Valid Dates. The Coupons shall be
+ subject to any terms and conditions specified in the Coupon Event, and all Promotional Methods including or
+ directing to Coupons must direct the end user to the applicable Coupon Event terms and conditions page as
+ designated by EPN. Coupons and Coupon Events do not impact the Rate Card and do not affect payment for any
+ Qualifying Transactions (or Qualifying Events or Qualifying Clicks, as applicable), and are purely to be
+ used to increase end user engagement. You will receive no compensation relating to Coupons or Coupon
+ Events. 
+ Help Center 
+ Insights & Updates 
+ Contact Us 
+ Network Agreement 
+ Privacy Notice 
+ Rate Card 
+ Copyright © 1995-2026 eBay Partner Network Inc.

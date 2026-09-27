@@ -1,0 +1,12 @@
+{
+  "ziniao": {
+    "company": "你的紫鸟公司名",
+    "username": "你的紫鸟用户名",
+    "password": "你的紫鸟密码"
+  },
+  "ebay_api": {
+    "environment": "sandbox",
+    "client_id": "沙盒 App ID（Client ID）",
+    "client_secret": "沙盒 Cert ID（Client Secret）"
+  }
+}

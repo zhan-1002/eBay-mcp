@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "position": 1,
+      "title": "Sony WH-1000XM5 Wireless Noise Canceling Headphones Black",
+      "price": 278.0,
+      "currency": "USD",
+      "is_sponsored": true,
+      "leaf_category_ids": ["15032", "293"],
+      "categories": [{"id": "15032", "name": "Headphones"}],
+      "item_specifics": [
+        {"name": "Brand", "value": "Sony"},
+        {"name": "Color", "value": "Black"},
+        {"name": "Type", "value": "Over-Ear"}
+      ]
+    },
+    {
+      "position": 2,
+      "title": "Sony WH-1000XM5 Wireless Headphones Silver",
+      "price": 249.0,
+      "currency": "USD",
+      "is_sponsored": true,
+      "leaf_category_ids": ["15032"],
+      "categories": [{"id": "15032", "name": "Headphones"}],
+      "item_specifics": [
+        {"name": "Brand", "value": "Sony"},
+        {"name": "Colour", "value": "Silver"}
+      ]
+    },
+    {
+      "position": 3,
+      "title": "Bose QuietComfort Ultra Wireless Headphones Blue",
+      "price": 329.0,
+      "currency": "USD",
+      "is_sponsored": false,
+      "leaf_category_ids": ["15032"],
+      "categories": [{"id": "15032", "name": "Headphones"}],
+      "item_specifics": [
+        {"name": "Brand", "value": "Bose"},
+        {"name": "Color", "value": "Blue"}
+      ]
+    }
+  ]
+}

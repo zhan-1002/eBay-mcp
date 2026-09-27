@@ -1,0 +1,8 @@
+{"ts": "2026-09-24 14:43:38", "event": "start", "argv": ["01_关键词选品\\脚本\\mcp_probe.py"], "cwd": "C:\\Users\\admin\\Desktop\\新建文件夹 (2)\\紫鸟ebay", "python": "3.10.18"}
+{"ts": "2026-09-24 14:43:38", "event": "recv", "method": "initialize", "id": 1, "params_keys": ["capabilities", "clientInfo", "protocolVersion"], "meta": null, "protocolVersion": "2025-06-18", "clientInfo": {"name": "WorkBuddy", "version": "1.2.3"}, "capabilities": {"roots": {"listChanged": true}}}
+{"ts": "2026-09-24 14:43:38", "event": "recv", "method": "notifications/initialized", "id": null, "params_keys": [], "meta": null, "protocolVersion": null, "clientInfo": null, "capabilities": null}
+{"ts": "2026-09-24 14:43:38", "event": "handshake-complete"}
+{"ts": "2026-09-24 14:43:38", "event": "recv", "method": "tools/list", "id": 2, "params_keys": [], "meta": null, "protocolVersion": null, "clientInfo": null, "capabilities": null}
+{"ts": "2026-09-24 14:43:38", "event": "recv", "method": "tools/call", "id": 3, "params_keys": ["arguments", "name"], "meta": null, "protocolVersion": null, "clientInfo": null, "capabilities": null}
+{"ts": "2026-09-24 14:43:38", "event": "tool-call", "name": "probe_ping", "arguments": {}}
+{"ts": "2026-09-24 14:43:38", "event": "stdin-closed"}

@@ -1,0 +1,58 @@
+{
+  "source": "api_uk_wireless_earbuds_20260915_010951.json",
+  "titles": [
+    "TWS Wireless Bluetooth Earphones Air In-Ear Pods Buds for iPhone Samsung Android",
+    "Wireless Bluetooth Earphones TWS Air In-Ear Pods Buds for iPhone Samsung Android",
+    "TWS Sports Wireless Bluetooth Earphones Headphones Ear Hook Running Bass Earbuds",
+    "Wireless Bluetooth Earbuds Invisible Sleep Earphones Noise Cancelling TWS",
+    "Bluetooth Earphones TWS Wireless Headphones Mini InEar Buds for iPhone Android",
+    "Bluetooth Earbuds Wireless 5.3 TWS Headphones Noise Cancelling Mic Charging Case",
+    "Bluetooth 5.4 Wireless Earbuds TWS Noise Cancelling Bass Earphones USB-C Headset",
+    "Bluetooth Earphones TWS Mini Wireless Headphones In-Ear Buds for iPhone Android",
+    "Wireless Bluetooth Earphones Sports Headphones Ear Hook Running Earbuds Headset",
+    "Invisible Sleep Wireless Earbuds Micro Bluetooth Earphones Noise Cancelling TWS",
+    "Wireless Earbuds Bluetooth 5.4 TWS Earphones In-Ear Pods for iPhone Android UK",
+    "Wireless Bluetooth 5.4 Headphones In Ear IPX4 Earbuds Earphones Android iPhone",
+    "PRO4 TWS Wireless Bluetooth Earphones Air In-Ear Pods for iPhone Samsung White",
+    "TWS Wireless Bluetooth ENC Headphones Earphones ANC for iPhone Samsung Android",
+    "Open Ear Wireless Bluetooth Headphone 5.3 Earphones for Android iPhone Earbuds",
+    "Wireless Earbuds Bluetooth 5.4 ANC Noise Cancelling Touch Screen Case IPX5 32H",
+    "TWS Wireless Earbuds Headphones Stereo Bluetooth Earphones for iPhone Android",
+    "TWS Wireless Bluetooth ENC ANC Headphones Earphones Earbuds iPhone Android UK",
+    "MPOW Wireless Bluetooth 5.4 Open Ear Earphones Headphones Sports HIFI Earbuds",
+    "Wireless Clip On Earbuds Bluetooth 5.4 Open Ear Headphones for Android iPhone",
+    "True Wireless Bluetooth Active Noise Cancelling Touchscreen Earphones Earbuds",
+    "Wireless Bluetooth Earbuds TWS Earphones In-Ear Headphones Charging Case Mic",
+    "Wireless Bluetooth TWS Earbuds In-Ear Stereo Pods for iPhone Samsung Android",
+    "Bluetooth 5.0 Wireless Earbuds Stereo In-Ear Headphones Charging Case iPhone",
+    "Lenovo LP40 TWS Bluetooth 5.0 Earphones Air Pods Wireless Headphones Earbuds",
+    "Wireless Bluetooth 5.3 Headphones In Ear 4 ENC Noise Cancelling Mic Earbuds",
+    "Bluetooth 5.3 Wireless Earbuds Dual Mic ENC Earphones for Android iPhone UK",
+    "Wireless Earbuds Bluetooth 5.3 Headphones in Ear HiFi Stereo Deep Bass Case",
+    "Wireless Bluetooth Earbuds Invisible Sleep Earphones Noise Canceling TWS UK",
+    "Wireless Earbuds Bluetooth 5.3 Charging Case iPhone Samsung Android TWS UK"
+  ],
+  "meta": {
+    "attempts": 2,
+    "usage": {
+      "prompt_tokens": 7627,
+      "completion_tokens": 1213,
+      "total_tokens": 8840
+    },
+    "pool_size": 44
+  },
+  "repeated": [
+    "TWS Wireless Bluetooth Earphones Air In-Ear Pods Buds for iphone Samsung Android",
+    "Wireless Bluetooth Earphones TWS Air In-Ear Pods Buds for Iphone Samsung Android",
+    "TWS Sports Wireless Bluetooth Earphones Headphones Ear Hook Running Bass Earbuds",
+    "Wireless Bluetooth Earbuds Invisible Sleep Earphones Noise Cancelling TWS",
+    "TWS Wireless Bluetooth Earphones Air In-Ear Pods Buds for iPhone Samsung Android",
+    "Bluetooth Earphones TWS Wireless Headphones Mini InEar Buds For iPhone Android",
+    "PRO4 TWS WIRELESS BLUETOOTH EARPHONES AIR IN-EAR PODS FOR IPHONE SAMSUNG - WHITE"
+  ],
+  "kept": [
+    "TWS Sports Wireless Bluetooth Earphones Headphones Ear Hook Running Bass Earbuds",
+    "Wireless Bluetooth Earbuds Invisible Sleep Earphones Noise Cancelling TWS",
+    "TWS Wireless Bluetooth Earphones Air In-Ear Pods Buds for iPhone Samsung Android"
+  ]
+}
