@@ -8,18 +8,18 @@ dist/
 __pycache__/
 *.pyc
 .pytest_cache/
-01_关键词选品/输出/*
-!01_关键词选品/输出/.gitkeep
-02_soldeazy详情补数/输出/*
-!02_soldeazy详情补数/输出/.gitkeep
-02_soldeazy详情补数/config.json
-02_soldeazy详情补数/脚本/config.json
+archive/01_关键词选品/输出/*
+!archive/01_关键词选品/输出/.gitkeep
+archive/02_soldeazy详情补数/输出/*
+!archive/02_soldeazy详情补数/输出/.gitkeep
+archive/02_soldeazy详情补数/config.json
+archive/02_soldeazy详情补数/脚本/config.json
 # 令牌文件（绝不入库）
 *token*.txt
 *token*.json
-!02_soldeazy详情补数/脚本/probe_ebay_with_token.py
+!archive/02_soldeazy详情补数/脚本/probe_ebay_with_token.py
 # 登录会话（含 cookie，绝不入库）
 *_session/
 *_session.json
 *.xlsx
-!文档/**
+!archive/文档/**
