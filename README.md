@@ -1,62 +1,109 @@
-# 紫鸟 eBay
+# eBay MCP
 
-eBay 关键词选品研究：抓竞品搜索结果 → 分析 → 出可上架 title；再用刊登编号去 Soldeazy 补全商品详情。
+通用 eBay Model Context Protocol 服务。它负责认证、调用、分页、字段透传、
+限流重试和稳定错误结构，不包含选品、关键词扩展、商品评分或推荐逻辑。
 
-| 目录 | 做什么 | 不做什么 |
-|---|---|---|
-| [01_关键词选品](01_关键词选品/README.md) | 输入关键词/站点，**走 eBay 官方 API** 抓 120 条含 item specifics，做词频/属性/类目/价格段/品牌壁垒，输出 30 条推荐 title | 不上架、不改 listing |
-| [02_soldeazy详情补数](02_soldeazy详情补数/README.md) | 拿 `01` 的刊登编号，去 Soldeazy「从刊登下载器创建数据表」取回详情（item specifics / 类目 / 价格 / 图片 / 描述） | 不改 listing、**删除数据表需人工确认** |
+当前版本：`0.1.0` 基础骨架。
 
-## 端到端流程
+## 当前工具
 
+- `ebay_get_capabilities`：查看环境、Marketplace 和可用能力，不返回凭据。
+- `ebay_search_items`：官方 Browse API 搜索与分页。
+- `ebay_get_item`：按 REST item ID 读取商品详情。
+- `ebay_get_default_category_tree`：获取 Marketplace 默认类目树。
+- `ebay_suggest_categories`：官方类目建议。
+- `ebay_get_category_aspects`：类目必填、推荐和可选属性。
+- `ebay_get_seller_feedback`：官方卖家反馈记录；不等同于完整销量。
+- `ebay_translate_text`：官方 Translation API。
+- `ebay_get_rate_limits`：应用实际 API 配额。
+- `ebay_sales_provider_status`：非公开销量数据提供者状态。
+- `ebay_read_skill`：为尚未支持 Skills 扩展的客户端读取 Skill。
+- `ebay_validate_titles`：机械校验 30 条 eBay 英文标题。
+- `ebay_get_sales_history`：预留的销量提供者接口；基础包默认关闭。
+
+共 13 个只读工具，当前不注册任何写工具。
+
+## Skills 与 Resources
+
+服务内置 7 个 Agent Skills，并以 `skill://` MCP Resources 暴露：
+
+- `ebay-listing-retrieval`
+- `ebay-taxonomy-navigation`
+- `ebay-seller-feedback`
+- `ebay-translation`
+- `ebay-api-diagnostics`
+- `ebay-sales-history`
+- `ebay-title-generation`
+
+`ebay-title-generation` 按当前要求输出恰好 30 条标题，并配合
+`ebay_validate_titles` 检查数量、80 字符、标点、重复词、重复标题以及调用方提供的
+禁用品牌/型号词。
+
+官方 Skills 扩展要求 MCP `2026-07-28`。WorkBuddy 1.2.3 当前实测仍使用
+`2025-06-18`，因此 Skill 内容以 Resource 为唯一来源，同时提供
+`ebay_read_skill` 兼容读取工具。
+
+## 快速开始
+
+```powershell
+Copy-Item .env.example .env
+# 编辑 .env，填写 EBAY_CLIENT_ID / EBAY_CLIENT_SECRET
+
+uv sync --extra dev
+uv run ebay-mcp-server
+uv run pytest
 ```
-01 关键词选品                        02 Soldeazy 详情补数
-─────────────────                  ────────────────────────
-紫鸟开店铺窗
-  → eBay 搜索页（1 次加载拿 120 条）
-  → item_id / 价格 / 广告位 / 末级类目ID
-  → 分析：词频·位置·评分 / 修饰词三分类    →  listing_spy 按刊登编号抓详情（写操作）
-  → 价格区间与占比 / 品牌壁垒                       ↓
-  → 推荐 30 条 title                     内容三重校验（有效 / 内容不符 / 拒绝）
-  → 输出 xlsx + json                              ↓
-                                          回填详情到本地 Excel/JSON
+
+仓库根目录提供 `.mcp.json`。WorkBuddy 1.2.3 实测使用 MCP `2025-06-18`
+和 stdio 传输，可把同样的 `uv run ebay-mcp-server` 命令加入其 MCP 配置。
+
+也可以继续使用已被 `.gitignore` 排除的 `config.local.json`：
+
+```json
+{
+  "ebay_api": {
+    "env": "production",
+    "client_id": "你的 App ID",
+    "client_secret": "你的 Cert ID"
+  }
+}
 ```
 
-## 采集方式
+环境变量优先于 JSON 配置。不要提交真实凭据、Token、Cookie 或会话文件。
 
-`01` 支持三种采集，分析逻辑共用（**默认官方 API**）：
+## 结构
 
-- **紫鸟店铺**（默认）：用自己的 eBay 店开窗，按站点点配送地址再搜（避免出口 IP 落在香港导致结果不准）
-- **官方 Browse API**：用开发者密钥搜，配送地走 header，不依赖 IP
+```text
+src/ebay_mcp_server/
+  server.py              MCP tools 与传输入口
+  clients/official.py    官方 eBay API 适配
+  gateway.py             OAuth、请求头、重试、错误转换
+  oauth.py               按 scope 缓存 application token
+  providers/sales.py     非公开销量数据源的可插拔接口
+  skills/*/SKILL.md      7 个可发现的工作流 Skill
+  skill_registry.py      Skill 清单、摘要与安全资源读取
+  title_validation.py    标题机械校验
+  contracts.py           Marketplace 与统一响应
+tests/                   离线契约测试
+```
 
-`02` 走 **Soldeazy 自己的 Web 接口**（requests，不开浏览器），需要登录一次。
+设计和非公开数据源边界见
+[`docs/ebay-mcp-architecture.md`](docs/ebay-mcp-architecture.md)。
+店铺监控、竞品对比、销量趋势和预警系统的可选路线图见
+[`TODO.md`](TODO.md)。
 
-## 凭据管理（都不进代码、不进版本库）
+## 非公开销量接口
 
-| 用途 | 位置 |
-|---|---|
-| 紫鸟账号 | 根目录 `config.local.json` 的 `ziniao`（从 `config.example.json` 复制） |
-| eBay API 密钥 | 同上 `ebay_api` |
-| Soldeazy 账号 | `02_soldeazy详情补数/config.json` 的 `soldeazy` |
-| 登录会话 cookie | `输出/_session/`（已 gitignore） |
+eBay 未向当前应用开放完整销量 API，因此预留了 `SalesHistoryProvider`。
+基础包不包含页面抓取实现，也不会尝试绕过验证码、访问控制或反自动化机制。
+未来提供者应作为独立模块接受合规、限流、会话安全和解析回归检查。
 
-## 两条硬性约束
+## 历史研究模块
 
-1. **风控**：`01` 默认**不进商品详情页**（`--detail 0`）—— 广告位与末级类目来自搜索页内嵌 JSON，
-   无需访问商品页；批量访问详情页的风险落在**登录态账号**上
-2. **生产账号写操作**：`02` 的 `listing_spy` 会在 Soldeazy 生产账号里**创建数据表**：
-   - 已创建的数据表**封存不删**（清单：`02_soldeazy详情补数/文档/生产账号数据表创建记录_封存.md`）
-   - 后续写操作必须先记 `输出/_manifest/created_rows.jsonl`
-   - 删除只允许按 rowid 白名单 + 逐行复验，**禁止按文件名/时间窗批量删**
-   - 页面**没有**按创建人分组/标记，也**不能自定义**生成的数据表名称
+以下目录是此前项目，保留供参考，但不属于 eBay MCP 核心：
 
-## 文档索引
+- [`01_关键词选品`](01_关键词选品/README.md)
+- [`02_soldeazy详情补数`](02_soldeazy详情补数/README.md)
 
-| 文档 | 内容 |
-|---|---|
-| `01_关键词选品/文档/需求.md` | 原始需求 |
-| `01_关键词选品/文档/进度.md` | 01 的改动与实测记录（含每个 bug 的根因） |
-| `01_关键词选品/文档/检查清单_20260914.md` | 接手时的缺陷清单（含文件行号） |
-| `01_关键词选品/文档/新输出预览_20260914.md` | 市场分析输出的内容预览 |
-| `02_soldeazy详情补数/文档/接口探查记录_20260914.md` | Soldeazy 登录/列表/详情/listing_spy 实测机制 |
-| `02_soldeazy详情补数/文档/生产账号数据表创建记录_封存.md` | 已创建数据表清单（封存） |
+`02_soldeazy详情补数` 曾在生产账号创建数据表。已有记录继续封存不删；
+任何后续写操作仍必须遵守其 README 中的清单和逐行复验要求。

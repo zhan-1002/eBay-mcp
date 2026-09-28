@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "ebay": {
+      "command": "uv",
+      "args": [
+        "run",
+        "ebay-mcp-server"
+      ],
+      "description": "General-purpose eBay API MCP server"
+    }
+  }
+}
+
