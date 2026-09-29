@@ -1,7 +1,7 @@
-"""Pluggable boundary for non-public sales-history data sources.
+"""Pluggable boundary for purchase-history data sources.
 
-No scraping implementation is bundled. A future provider must stay isolated
-behind this contract so official API tools remain stable and auditable.
+The base package does not include a collector yet. A future provider stays
+behind this contract so official API tools remain stable.
 """
 
 from __future__ import annotations

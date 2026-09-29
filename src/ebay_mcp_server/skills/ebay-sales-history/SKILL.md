@@ -1,14 +1,15 @@
 ---
 name: ebay-sales-history
-description: Uses the optional sales-history provider when explicitly configured. Use when requesting sales observations unavailable from official APIs, while enforcing provider availability, provenance, access rules, and fail-closed behavior.
+description: Uses the optional sales-history provider when explicitly configured. Use when requesting purchase-history observations unavailable from official APIs, and report provider availability and provenance.
 ---
 
 # eBay Sales History Provider
 
 ## Current state
 
-The base eBay MCP package does not include a scraper or non-public data
-provider. Never imply that sales history is available before checking status.
+The base package reserves the provider and does not include a purchase-history
+collector yet. Check status before treating sales history as available. The
+project does not forbid automated collection.
 
 ## Workflow
 
@@ -20,12 +21,10 @@ provider. Never imply that sales history is available before checking status.
    warnings.
 6. Distinguish observed transactions from estimates or derived aggregates.
 
-## Safety rules
+## Rules
 
-- Do not bypass CAPTCHA, access controls, account restrictions or technical
-  protection measures.
 - Do not request or expose Cookie, token, proxy or account secrets in chat.
-- Respect the provider's rate limit and concurrency limit.
-- If page structure or response shape is unrecognized, fail closed.
+- Keep the provider's rate limit and concurrency limit.
+- If page structure or response shape is unrecognized, return a clear failure.
 - Never silently substitute seller feedback counts for complete sales history.
 

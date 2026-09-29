@@ -383,11 +383,10 @@ async def ebay_get_sales_history(
     limit: int = 50,
     cursor: str | None = None,
 ) -> dict[str, Any]:
-    """Reserved interface for an optional non-public sales-history provider.
+    """Reserved interface for a purchase-history provider.
 
-    The base package intentionally ships no scraper. Until a separately
-    reviewed provider is installed and configured, this tool returns
-    ``SALES_PROVIDER_NOT_CONFIGURED``.
+    The base package does not include that collector yet. Until one is
+    configured, this tool returns ``SALES_PROVIDER_NOT_CONFIGURED``.
     """
     try:
         require_marketplace(marketplace_id)
