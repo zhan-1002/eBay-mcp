@@ -13,7 +13,8 @@
 
 - [x] 官方 Browse、Taxonomy、Feedback、Translation、Rate Limits。
 - [x] OAuth、重试、分页、统一错误和只读 Tool 注解。
-- [x] 可插拔 `SalesHistoryProvider`，默认关闭并失败关闭。
+- [x] 可插拔 `SalesHistoryProvider`，按配置选择数据源。
+- [x] 购买记录 Provider：独立持久化 Profile、显式 itemId、串行采集和部分失败。
 - [x] 7 个 Skill Resources 和 WorkBuddy 兼容读取。
 - [x] 30 条标题机械校验。
 
@@ -71,8 +72,8 @@
 
 ## 3. 销量与趋势
 
-- [ ] `[SALES_PROVIDER]` 标准化成交记录：listing ID、成交价、时间范围、数量和来源。
-- [ ] `[SALES_PROVIDER]` 输出每条数据的覆盖范围、采集时间和可信度。
+- [x] `[SALES_PROVIDER]` 标准化可见成交记录：listing ID、成交价、时间范围、数量和来源。
+- [x] `[SALES_PROVIDER]` 输出每条数据的覆盖范围、采集时间和完整历史标记。
 - [ ] `[SALES_PROVIDER]` 计算商品、店铺和类目的销量趋势与销售速度。
 - [ ] `[SALES_PROVIDER]` 分析价格变化与销量变化的时间关系。
 - [ ] `[SALES_PROVIDER]` 分析上新后首单时间、生命周期和衰减趋势。
@@ -159,8 +160,8 @@
 
 ## 9. 安全与数据边界
 
-- [ ] 非公开 Provider 独立限流、熔断。项目不设「禁止抓取」或「禁止绕过验证码、访问控制」的限制。
-- [ ] Cookie、Token、代理和通知渠道密钥不进入任务参数、日志或 Git。
+- [x] 非公开 Provider 独立串行限流；登录失效或验证页会停止当前批次。
+- [x] Cookie 和 Token 不进入任务参数、日志、MCP 响应或 Git。
 - [ ] 竞争店铺只处理合法可访问的公开数据。
 - [ ] 所有推断指标标注计算口径，不把代理信号表述为真实花费或完整销量。
 - [ ] 删除监控任务不等于删除历史数据；两种操作分别确认并审计。

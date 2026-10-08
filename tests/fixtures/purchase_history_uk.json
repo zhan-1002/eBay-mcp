@@ -1,0 +1,25 @@
+{
+  "headers": [
+    "User ID",
+    "Variation",
+    "Buy It Now price",
+    "Quantity",
+    "Date of purchase"
+  ],
+  "rows": [
+    [
+      "a***b",
+      "Colour: Blue",
+      "£12.50",
+      "2",
+      "27 Sep 2026 at 3:24:07pm BST"
+    ],
+    [
+      "c***d",
+      "Colour: Red",
+      "£10.00",
+      "1",
+      "26 Sep 2026 at 09:05:00 BST"
+    ]
+  ]
+}

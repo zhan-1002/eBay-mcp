@@ -1,8 +1,4 @@
-"""Pluggable boundary for purchase-history data sources.
-
-The base package does not include a collector yet. A future provider stays
-behind this contract so official API tools remain stable.
-"""
+"""Pluggable purchase-history providers used by the MCP sales tools."""
 
 from __future__ import annotations
 
@@ -16,6 +12,15 @@ from ebay_mcp_server.errors import EbayMcpError
 class SalesHistoryProvider(ABC):
     name: str
 
+    async def open_login(
+        self, marketplace_id: str, item_id: str | None = None
+    ) -> dict[str, Any]:
+        del item_id
+        raise EbayMcpError(
+            "SALES_LOGIN_UNSUPPORTED",
+            f"The {self.name} provider does not manage a browser login.",
+        )
+
     @abstractmethod
     async def status(self) -> dict[str, Any]:
         """Return configuration and availability without exposing credentials."""
@@ -23,13 +28,13 @@ class SalesHistoryProvider(ABC):
     @abstractmethod
     async def search(
         self,
-        query: str,
+        item_ids: list[str],
         marketplace_id: str,
         *,
         limit: int,
-        cursor: str | None,
+        allow_window: bool = False,
     ) -> dict[str, Any]:
-        """Return provider-native sales observations in a normalized envelope."""
+        """Return recent purchase observations for numeric legacy item IDs."""
 
     async def close(self) -> None:
         return None
@@ -51,12 +56,13 @@ class DisabledSalesProvider(SalesHistoryProvider):
 
     async def search(
         self,
-        query: str,
+        item_ids: list[str],
         marketplace_id: str,
         *,
         limit: int,
-        cursor: str | None,
+        allow_window: bool = False,
     ) -> dict[str, Any]:
+        del allow_window
         raise EbayMcpError(
             "SALES_PROVIDER_NOT_CONFIGURED",
             self.reason,
@@ -70,8 +76,15 @@ class DisabledSalesProvider(SalesHistoryProvider):
 def build_sales_provider(settings: Settings) -> SalesHistoryProvider:
     if settings.sales_provider in {"", "disabled", "none"}:
         return DisabledSalesProvider()
+    if settings.sales_provider in {
+        "purchase_history",
+        "purchase-history",
+        "ebay-purchase-history",
+    }:
+        from ebay_mcp_server.providers.purchase_history import PurchaseHistoryProvider
+
+        return PurchaseHistoryProvider(settings)
     return DisabledSalesProvider(
         f"Unknown EBAY_SALES_PROVIDER={settings.sales_provider!r}. "
         "Install and register a provider implementation before enabling it."
     )
-

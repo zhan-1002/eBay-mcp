@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import asynccontextmanager
 import logging
 import sys
-from typing import Any, Awaitable
+from collections.abc import Awaitable
+from contextlib import asynccontextmanager
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -23,7 +24,6 @@ from ebay_mcp_server.gateway import ApiResponse, EbayGateway
 from ebay_mcp_server.providers import build_sales_provider
 from ebay_mcp_server.skill_registry import SkillRegistry
 from ebay_mcp_server.title_validation import validate_titles
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +60,12 @@ READ_ONLY_NETWORK = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
     idempotentHint=True,
+    openWorldHint=True,
+)
+LOCAL_SESSION_ACTION = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
     openWorldHint=True,
 )
 
@@ -116,7 +122,7 @@ async def ebay_get_capabilities() -> dict[str, Any]:
     """Inspect server configuration and supported eBay capabilities.
 
     Use this before calling tools when authentication, marketplace support, or
-    the optional sales-history provider is uncertain. No network request is
+    sales-history provider state is uncertain. No network request is
     made and no credential value is returned.
     """
     provider = await sales_provider.status()
@@ -192,7 +198,12 @@ async def ebay_get_item(
     marketplace_id: str = "EBAY_US",
     fieldgroups: str | None = None,
 ) -> dict[str, Any]:
-    """Get one active listing from the official Browse API by REST item ID."""
+    """Get one active listing from the official Browse API by REST item ID.
+
+    ``estimatedSoldQuantity`` in this response is an official aggregate
+    estimate. It is not the sales detail. Collected sales are the
+    purchase-history transaction rows from ``ebay_get_sales_history``.
+    """
     try:
         marketplace = require_marketplace(marketplace_id)
     except EbayMcpError as exc:
@@ -320,12 +331,42 @@ async def ebay_get_rate_limits() -> dict[str, Any]:
 
 @mcp.tool(annotations=READ_ONLY_LOCAL)
 async def ebay_sales_provider_status() -> dict[str, Any]:
-    """Inspect the optional sales-history provider without performing a scrape."""
+    """Inspect the sales-history provider and its persistent browser session."""
     return success(
         "sales_provider_status",
         "sales-provider",
         await sales_provider.status(),
     )
+
+
+@mcp.tool(annotations=LOCAL_SESSION_ACTION)
+async def ebay_sales_open_login(
+    marketplace_id: str = "EBAY_GB",
+    item_id: str | None = None,
+) -> dict[str, Any]:
+    """Show the purchase-history browser window after the user has agreed.
+
+    Do not call this until the user explicitly allows the window to appear.
+    After sign-in the same window stays open and minimized. Pass ``item_id``
+    to park it on that listing's purchase-history page. Do not close it.
+    """
+    try:
+        require_marketplace(marketplace_id)
+        data = await sales_provider.open_login(
+            marketplace_id.upper(), item_id=item_id
+        )
+        return success("sales_open_login", sales_provider.name, data)
+    except EbayMcpError as exc:
+        return tool_error("sales_open_login", exc)
+    except Exception as exc:  # pragma: no cover - provider safety boundary
+        logger.exception("Unhandled sales login error")
+        return tool_error(
+            "sales_open_login",
+            EbayMcpError(
+                "SALES_LOGIN_ERROR",
+                f"Sales login failed: {type(exc).__name__}",
+            ),
+        )
 
 
 @mcp.tool(annotations=READ_ONLY_LOCAL)
@@ -378,23 +419,30 @@ async def ebay_validate_titles(
 
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def ebay_get_sales_history(
-    query: str,
-    marketplace_id: str = "EBAY_US",
-    limit: int = 50,
-    cursor: str | None = None,
+    item_ids: list[str],
+    marketplace_id: str = "EBAY_GB",
+    limit_per_item: int = 100,
+    allow_browser_window: bool = False,
 ) -> dict[str, Any]:
-    """Reserved interface for a purchase-history provider.
+    """Collect purchase-history transaction rows for legacy item IDs.
 
-    The base package does not include that collector yet. Until one is
-    configured, this tool returns ``SALES_PROVIDER_NOT_CONFIGURED``.
+    The sales data is ``items[].transactions``: each visible purchase with
+    price, quantity, time and variation. ``visible_quantity`` only sums those
+    rows. Do not substitute Browse API ``estimatedSoldQuantity``.
+
+    ``item_ids`` must contain traditional numeric eBay listing IDs, not REST
+    IDs such as ``v1|123456789012|0``. The call first checks the parked
+    browser. The window stays minimized. A detected eBay check waits silently
+    for a verification component and does not by itself show the window. Set
+    ``allow_browser_window`` only after the user agrees.
     """
     try:
         require_marketplace(marketplace_id)
         data = await sales_provider.search(
-            query,
+            item_ids,
             marketplace_id.upper(),
-            limit=max(1, min(int(limit), 200)),
-            cursor=cursor,
+            limit=max(1, min(int(limit_per_item), 100)),
+            allow_window=bool(allow_browser_window),
         )
         return success("get_sales_history", sales_provider.name, data)
     except EbayMcpError as exc:
@@ -424,4 +472,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

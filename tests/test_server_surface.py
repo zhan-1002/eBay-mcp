@@ -16,20 +16,28 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "ebay_translate_text",
         "ebay_get_rate_limits",
         "ebay_sales_provider_status",
+        "ebay_sales_open_login",
         "ebay_read_skill",
         "ebay_validate_titles",
         "ebay_get_sales_history",
     } <= tools
-    assert len(tools) == 13
+    assert len(tools) == 14
     assert not any("recall" in name or "selection" in name for name in tools)
     assert len(server.mcp._resource_manager._resources) == 7
 
 
 @pytest.mark.asyncio
 async def test_reserved_sales_tool_fails_closed_without_provider():
-    result = await server.ebay_get_sales_history("phone case")
+    result = await server.ebay_get_sales_history(["314126742195"])
     assert result["success"] is False
     assert result["error"]["code"] == "SALES_PROVIDER_NOT_CONFIGURED"
+
+
+@pytest.mark.asyncio
+async def test_sales_login_tool_fails_closed_without_provider():
+    result = await server.ebay_sales_open_login()
+    assert result["success"] is False
+    assert result["error"]["code"] == "SALES_LOGIN_UNSUPPORTED"
 
 
 @pytest.mark.asyncio
@@ -47,9 +55,7 @@ async def test_capabilities_do_not_expose_credentials():
 async def test_workbuddy_skill_bridge_reads_canonical_resource():
     result = await server.ebay_read_skill("ebay-title-generation")
     assert result["success"] is True
-    assert result["data"]["skill"]["uri"] == (
-        "skill://ebay-title-generation/SKILL.md"
-    )
+    assert result["data"]["skill"]["uri"] == ("skill://ebay-title-generation/SKILL.md")
     assert "exactly 30" in result["data"]["content"]
 
 
@@ -59,4 +65,3 @@ async def test_title_validator_tool_uses_local_contract():
     result = await server.ebay_validate_titles(titles)
     assert result["success"] is True
     assert result["data"]["valid_for_delivery"] is True
-

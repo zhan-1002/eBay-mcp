@@ -21,5 +21,7 @@ archive/02_soldeazy详情补数/脚本/config.json
 # 登录会话（含 cookie，绝不入库）
 *_session/
 *_session.json
+.ebay-mcp/
+sales-profile/
 *.xlsx
 !archive/文档/**

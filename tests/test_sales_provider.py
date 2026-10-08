@@ -19,7 +19,7 @@ def settings(provider: str = "disabled") -> Settings:
 
 
 @pytest.mark.asyncio
-async def test_base_package_has_no_scraper_implementation():
+async def test_sales_provider_is_disabled_when_configuration_selects_disabled():
     provider = build_sales_provider(settings())
     assert isinstance(provider, DisabledSalesProvider)
     status = await provider.status()
@@ -32,10 +32,9 @@ async def test_disabled_provider_returns_explicit_error():
     provider = DisabledSalesProvider()
     with pytest.raises(EbayMcpError) as caught:
         await provider.search(
-            "phone case",
+            ["314126742195"],
             "EBAY_US",
             limit=20,
-            cursor=None,
         )
     assert caught.value.code == "SALES_PROVIDER_NOT_CONFIGURED"
 
@@ -47,3 +46,11 @@ async def test_unknown_provider_fails_closed():
     assert status["available"] is False
     assert "Unknown EBAY_SALES_PROVIDER" in status["reason"]
 
+
+@pytest.mark.asyncio
+async def test_purchase_history_provider_can_be_enabled_without_starting_browser():
+    provider = build_sales_provider(settings("purchase_history"))
+    assert provider.name == "ebay-purchase-history"
+    status = await provider.status()
+    assert status["implementation_bundled"] is True
+    assert status["browser"]["browser_running"] is False

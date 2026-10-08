@@ -6,6 +6,9 @@
         "run",
         "ebay-mcp-server"
       ],
+      "env": {
+        "EBAY_SALES_PROVIDER": "purchase_history"
+      },
       "description": "General-purpose eBay API MCP server"
     }
   }
