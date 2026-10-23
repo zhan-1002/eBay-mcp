@@ -22,6 +22,15 @@ from typing import Iterable, Literal, Mapping, Sequence
 
 PackPolicy = Literal["same", "skip", "multiply"]
 
+#: Datasheet columns the operator is allowed to touch, by change field.
+EDITABLE_COLUMNS: dict[str, str] = {"qty": "E", "price": "F"}
+
+#: Sites the price sheet is split into.
+DEFAULT_SITES: tuple[str, ...] = ("UK", "DE", "US")
+
+#: Prefixes the price sheet strips before matching datasheet SKUs.
+SPECIAL_PREFIXES: tuple[str, ...] = ("EF-", "EF2-")
+
 
 @dataclass(frozen=True)
 class DatasheetRow:
@@ -172,6 +181,99 @@ def match_target(sku: str, targets: Mapping[str, float]) -> tuple[str, str, int]
         if _matches(key, base):
             return key, base, pack
     return None
+
+
+@dataclass(frozen=True)
+class PriceTargets:
+    """Minimum selling prices split by site, as the price sheet is laid out."""
+
+    by_site: dict[str, dict[str, float]]
+    rejected: list[dict[str, str]]
+    conflicts: list[dict[str, object]]
+
+    def for_site(self, site: str) -> dict[str, float]:
+        return dict(self.by_site.get((site or "").strip().upper(), {}))
+
+    def search_terms(self, site: str) -> list[str]:
+        """Wildcard terms for the datasheet search box (``*CORE``).
+
+        The site accepts ``*`` so one term finds the bare SKU plus its
+        ``US``/``x2``/``x4`` variants in a single query.
+        """
+
+        return [f"*{key}" for key in sorted(self.for_site(site))]
+
+    def search_string(self, site: str) -> str:
+        """Space-joined terms, matching the ``查找输入`` cell of the flow."""
+
+        return " ".join(self.search_terms(site))
+
+
+def load_targets(
+    entries: Iterable[Sequence[object]],
+    *,
+    sites: Sequence[str] = DEFAULT_SITES,
+) -> PriceTargets:
+    """Build per-site targets from ``(SKU, price)`` pairs.
+
+    The first two characters of a price-sheet SKU are the site code; the rest is
+    the product code with ``EF-``/``EF2-`` stripped, mirroring the flow's
+    ``SKU处理后``. Rows that cannot be attributed to a site, and duplicated SKUs
+    with different prices, are reported instead of silently dropped.
+    """
+
+    allowed = {site.upper() for site in sites}
+    by_site: dict[str, dict[str, float]] = {site: {} for site in allowed}
+    rejected: list[dict[str, str]] = []
+    conflicts: list[dict[str, object]] = []
+
+    for entry in entries:
+        raw_sku, raw_price = entry[0], entry[1]
+        sku = str(raw_sku or "").strip()
+        if len(sku) <= 2:
+            rejected.append({"sku": sku, "reason": "SKU 不足 3 位，无法拆分站点与货号"})
+            continue
+        site = sku[:2].upper()
+        if site not in allowed:
+            rejected.append({"sku": sku, "reason": f"站点 {site} 不在 {sorted(allowed)} 中"})
+            continue
+        if raw_price in (None, ""):
+            rejected.append({"sku": sku, "reason": "价格更新为空"})
+            continue
+        core = sku[2:]
+        for prefix in SPECIAL_PREFIXES:
+            if core.upper().startswith(prefix):
+                core = core[len(prefix) :]
+                break
+        if not core:
+            rejected.append({"sku": sku, "reason": "去掉前缀后没有货号"})
+            continue
+
+        price = float(str(raw_price).strip())
+        existing = by_site[site].get(core)
+        if existing is not None and existing != price:
+            conflicts.append({"site": site, "sku": core, "kept": existing, "ignored": price})
+            continue
+        by_site[site][core] = price
+
+    return PriceTargets(by_site=by_site, rejected=rejected, conflicts=conflicts)
+
+
+def validate_write_scope(changes: Iterable[Change], *, uploaded_columns: Iterable[str] = ()) -> None:
+    """Refuse a write that reaches outside the editable columns.
+
+    Uploading a datasheet replaces the whole row, so a change landing anywhere
+    but ``E`` (Qty) or ``F`` (Price) would overwrite live listing data.
+    """
+
+    bad = sorted({change.field for change in changes if change.field not in EDITABLE_COLUMNS})
+    if bad:
+        raise ValueError(f"改价/改库存只允许动 {EDITABLE_COLUMNS}，收到越界字段 {bad}")
+
+    allowed = set(EDITABLE_COLUMNS.values())
+    extra = sorted({str(col).strip().upper() for col in uploaded_columns} - allowed)
+    if extra:
+        raise ValueError(f"上传文件变化列超出白名单 {sorted(allowed)}：{extra}")
 
 
 def plan_price_changes(

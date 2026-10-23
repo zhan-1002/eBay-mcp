@@ -5,13 +5,16 @@ from __future__ import annotations
 import pytest
 
 from ebay_mcp_server.providers.soldeazy_pricing import (
+    Change,
     DatasheetRow,
+    load_targets,
     match_target,
     parse_pack,
     plan_price_changes,
     plan_stock_changes,
     resolve_postage,
     rows_from_matrix,
+    validate_write_scope,
 )
 
 
@@ -157,3 +160,62 @@ def test_rows_from_matrix_handles_text_numbers_and_blanks() -> None:
     assert rows[0].postage == 0.0
     assert rows[2].postage is None
     assert rows[1].rowid == ""
+
+def test_targets_are_split_by_site_and_strip_special_prefixes() -> None:
+    targets = load_targets(
+        [
+            ("UKZMCL0006", 14.9),
+            ("DE GJHW0031", ""),  # 空价格
+            ("DEGJHW0031", 34.9),
+            ("DEEF-1371812", 10.9),
+            ("DEEF2-1371813", 11.9),
+            ("USPCPB0028", 35.0),
+            ("FRPCPB0028", 30.0),  # 站点不在允许列表
+            ("DE", 1.0),  # 太短
+        ]
+    )
+
+    assert sorted(targets.by_site) == ["DE", "UK", "US"]
+    assert targets.for_site("UK") == {"ZMCL0006": 14.9}
+    assert targets.for_site("DE") == {"GJHW0031": 34.9, "1371812": 10.9, "1371813": 11.9}
+    assert [r["reason"] for r in targets.rejected] == [
+        "价格更新为空",
+        "站点 FR 不在 ['DE', 'UK', 'US'] 中",
+        "SKU 不足 3 位，无法拆分站点与货号",
+    ]
+
+
+def test_duplicate_targets_keep_the_first_price_and_report_the_conflict() -> None:
+    targets = load_targets([("DEABC1", 10.0), ("DEABC1", 12.0)])
+    assert targets.for_site("DE") == {"ABC1": 10.0}
+    assert targets.conflicts == [
+        {"site": "DE", "sku": "ABC1", "kept": 10.0, "ignored": 12.0}
+    ]
+
+
+def test_search_string_matches_the_flow_find_input() -> None:
+    targets = load_targets([("UKZMCL0006", 14.9), ("UKQPCT0005", 9.9)])
+    assert targets.search_terms("uk") == ["*QPCT0005", "*ZMCL0006"]
+    assert targets.search_string("UK") == "*QPCT0005 *ZMCL0006"
+    assert targets.search_string("US") == ""
+
+
+def test_write_scope_allows_only_qty_and_price() -> None:
+    ok = [
+        Change(row=3, sku="A", field="price", old=1.0, new=2.0, reason=""),
+        Change(row=4, sku="B", field="qty", old=1.0, new=2.0, reason=""),
+    ]
+    validate_write_scope(ok)
+    validate_write_scope(ok, uploaded_columns={"E", "F"})
+    validate_write_scope(ok, uploaded_columns={"e", "f"})
+
+    with pytest.raises(ValueError, match="越界字段"):
+        validate_write_scope(
+            [Change(row=5, sku="C", field="postage", old=0.0, new=1.0, reason="")]  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="超出白名单"):
+        validate_write_scope(ok, uploaded_columns={"E", "F", "G"})
+
+    with pytest.raises(ValueError, match="超出白名单"):
+        validate_write_scope(ok, uploaded_columns={"D"})
