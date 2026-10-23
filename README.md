@@ -21,8 +21,27 @@
 - `ebay_read_skill`：为尚未支持 Skills 扩展的客户端读取 Skill。
 - `ebay_validate_titles`：机械校验 30 条 eBay 英文标题。
 - `ebay_get_sales_history`：按传统数字 itemId 采集购买记录明细。销量数据是每一笔成交，不是官方已售总数。
+- `soldeazy_status`：Soldeazy 浏览器 profile、凭据与写工具开关状态。
+- `soldeazy_open_login`：打开 Soldeazy 登录页并保留浏览器会话。
+- `soldeazy_search_datasheet`：按站点 + SKU 通配串读取数据表行（Row ID / SKU / 价格 / 运费 / 数量）。
+- `soldeazy_preview_price_change`：离线算价预览，只读不写。
 
-共 13 个只读工具和 1 个本地会话工具，当前不注册任何 eBay 写工具。
+共 16 个只读工具和 2 个本地会话工具，当前不注册任何 eBay 写工具。
+
+## Soldeazy 改价/改库存（进行中）
+
+Soldeazy 没有可用的接口文档，生产链路是「浏览器导出 xlsx → 离线算价 → 上传 → BULK SYNC」
+（影刀应用 `soldeazy批量改价`）。这里按同样的 UI 路径复刻，目前只开放只读部分。
+
+规则内核在 `providers/soldeazy_pricing.py`：
+
+- 最低售价 = 价格 + 运费；合计低于它就抬到最低售价，只升不降。
+- 运费属于数据表而不是单行：Row ID 空行继承同组唯一运费，一组多值时报警不猜。
+- 库存改的是实际 SKU（去掉 `xN` 打包后缀）的绝对值；打包行按打包数换算刊登数量。
+- 上传会整行覆盖数据表，所以写操作只允许落在 E(数量) / F(价格) 两列。
+
+写工具（`soldeazy_update_price` / `soldeazy_update_stock`）要等只读链路真机验证通过、
+且 `SOLDEAZY_WRITE_ENABLED=1` 之后才注册。
 
 ## Skills 与 Resources
 

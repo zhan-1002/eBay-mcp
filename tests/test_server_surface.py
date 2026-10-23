@@ -20,9 +20,18 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "ebay_read_skill",
         "ebay_validate_titles",
         "ebay_get_sales_history",
+        "soldeazy_status",
+        "soldeazy_open_login",
+        "soldeazy_search_datasheet",
+        "soldeazy_preview_price_change",
     } <= tools
-    assert len(tools) == 14
+    assert len(tools) == 18
     assert not any("recall" in name or "selection" in name for name in tools)
+    # 写工具尚未注册：等只读链路在真机验证通过后再开
+    assert not any(
+        name in tools
+        for name in ("soldeazy_update_price", "soldeazy_update_stock", "soldeazy_apply_changes")
+    )
     assert len(server.mcp._resource_manager._resources) == 7
 
 

@@ -22,6 +22,13 @@ from ebay_mcp_server.contracts import (
 from ebay_mcp_server.errors import EbayMcpError, tool_error
 from ebay_mcp_server.gateway import ApiResponse, EbayGateway
 from ebay_mcp_server.providers import build_sales_provider
+from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+from ebay_mcp_server.providers.soldeazy_pricing import (
+    DatasheetRow,
+    PackPolicy,
+    load_targets,
+    plan_price_changes,
+)
 from ebay_mcp_server.skill_registry import SkillRegistry
 from ebay_mcp_server.title_validation import validate_titles
 
@@ -36,6 +43,7 @@ settings = Settings.load()
 gateway = EbayGateway(settings)
 official = OfficialEbayClient(gateway)
 sales_provider = build_sales_provider(settings)
+soldeazy = SoldeazyBrowser(settings)
 skill_registry = SkillRegistry()
 
 
@@ -44,6 +52,7 @@ async def lifespan(_server):
     try:
         yield {}
     finally:
+        await soldeazy.close()
         await sales_provider.close()
         await gateway.close()
 
@@ -455,6 +464,148 @@ async def ebay_get_sales_history(
                 "SALES_PROVIDER_ERROR",
                 f"Sales provider failed: {type(exc).__name__}",
             ),
+        )
+
+
+def _search_text(skus: list[str] | None, raw: str) -> str:
+    """Build the space-joined wildcard query the Soldeazy search box expects."""
+
+    if raw.strip():
+        return raw.strip()
+    terms: list[str] = []
+    for sku in skus or []:
+        core = str(sku).strip()
+        if core:
+            terms.append(core if core.startswith("*") else f"*{core}")
+    return " ".join(terms)
+
+
+def _to_rows(records: list[dict[str, Any]], *, first_row: int = 3) -> list[DatasheetRow]:
+    rows: list[DatasheetRow] = []
+    for offset, record in enumerate(records):
+        rows.append(
+            DatasheetRow(
+                row=first_row + offset,
+                rowid=str(record.get("rowid") or "").strip(),
+                parent_sku="",
+                sku=str(record.get("sku") or "").strip(),
+                qty=float(record.get("qty") or 0),
+                price=float(record.get("price") or 0),
+                postage=record.get("postage"),
+            )
+        )
+    return rows
+
+
+@mcp.tool(annotations=READ_ONLY_LOCAL)
+async def soldeazy_status() -> dict[str, Any]:
+    """Report the Soldeazy browser profile, credentials and write-tool state.
+
+    Use this before any Soldeazy call: it says whether a profile exists, whether
+    credentials are configured, and whether the write tools are enabled.
+    """
+    try:
+        return success("soldeazy_status", "soldeazy", await soldeazy.status())
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_status", exc)
+
+
+@mcp.tool(annotations=LOCAL_SESSION_ACTION)
+async def soldeazy_open_login() -> dict[str, Any]:
+    """Open the Soldeazy sign-in page in the persistent profile.
+
+    With ``SOLDEAZY_USERNAME``/``SOLDEAZY_PASSWORD`` the form is filled and
+    submitted; otherwise the window stays open for a manual sign-in. The browser
+    is kept open for later calls until the server stops.
+    """
+    try:
+        return success("soldeazy_open_login", "soldeazy", await soldeazy.interactive_login())
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_open_login", exc)
+
+
+@mcp.tool(annotations=READ_ONLY_NETWORK)
+async def soldeazy_search_datasheet(
+    site: str,
+    skus: list[str] | None = None,
+    search_text: str = "",
+) -> dict[str, Any]:
+    """Read datasheet rows (Row ID, SKU, price, postage, qty) for one site.
+
+    ``skus`` are product codes; each becomes a ``*CODE`` wildcard so the bare
+    SKU and its ``US``/``x2``/``x4`` variants come back in one query. Pass
+    ``search_text`` to use the box verbatim instead.
+    """
+    query = _search_text(skus, search_text)
+    if not query:
+        return tool_error(
+            "soldeazy_search_datasheet",
+            EbayMcpError("SOLDEAZY_QUERY_EMPTY", "至少给一个 SKU 或 search_text。"),
+        )
+    try:
+        data = await soldeazy.search(query, site)
+        return success("soldeazy_search_datasheet", "soldeazy", data)
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_search_datasheet", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy search error")
+        return tool_error(
+            "soldeazy_search_datasheet",
+            EbayMcpError("SOLDEAZY_SEARCH_ERROR", f"搜索失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=READ_ONLY_NETWORK)
+async def soldeazy_preview_price_change(
+    site: str,
+    price_sheet: list[list[Any]],
+    pack_policy: str = "same",
+) -> dict[str, Any]:
+    """Preview a price change without writing anything.
+
+    ``price_sheet`` is the operator's ``(SKU, 价格更新)`` rows: the two-letter
+    prefix selects the site, ``EF-``/``EF2-`` prefixes are stripped, and the
+    price is the *minimum selling price* (price + postage). Only rows whose
+    total is below the minimum are planned, and only the price column changes.
+    """
+    if pack_policy not in {"same", "skip", "multiply"}:
+        return tool_error(
+            "soldeazy_preview_price_change",
+            EbayMcpError("SOLDEAZY_PACK_POLICY", "pack_policy 只能是 same/skip/multiply。"),
+        )
+    try:
+        targets = load_targets([(row[0], row[1]) for row in price_sheet])
+        site_targets = targets.for_site(site)
+        if not site_targets:
+            raise EbayMcpError(
+                "SOLDEAZY_NO_TARGETS",
+                f"{site} 没有可用目标价。",
+                details={"rejected": targets.rejected, "conflicts": targets.conflicts},
+            )
+        query = " ".join(f"*{key}" for key in sorted(site_targets))
+        found = await soldeazy.search(query, site)
+        plan = plan_price_changes(
+            _to_rows(found["rows"]), site_targets, pack_policy=pack_policy  # type: ignore[arg-type]
+        )
+        return success(
+            "soldeazy_preview_price_change",
+            "soldeazy",
+            {
+                "site": site,
+                "search": query,
+                "datasheet_rows": found["row_count"],
+                "plan": plan.as_dict(),
+                "rejected_targets": targets.rejected,
+                "target_conflicts": targets.conflicts,
+            },
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_preview_price_change", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy preview error")
+        return tool_error(
+            "soldeazy_preview_price_change",
+            EbayMcpError("SOLDEAZY_PREVIEW_ERROR", f"预览失败: {type(exc).__name__}"),
         )
 
 
