@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 
 from ebay_mcp_server import server
 
@@ -24,8 +24,9 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "soldeazy_open_login",
         "soldeazy_search_datasheet",
         "soldeazy_preview_price_change",
+        "soldeazy_stock_template",
     } <= tools
-    assert len(tools) == 18
+    assert len(tools) == 19
     assert not any("recall" in name or "selection" in name for name in tools)
     # 写工具尚未注册：等只读链路在真机验证通过后再开
     assert not any(

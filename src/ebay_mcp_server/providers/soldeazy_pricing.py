@@ -31,6 +31,11 @@ DEFAULT_SITES: tuple[str, ...] = ("UK", "DE", "US")
 #: Prefixes the price sheet strips before matching datasheet SKUs.
 SPECIAL_PREFIXES: tuple[str, ...] = ("EF-", "EF2-")
 
+#: 站点后缀，用于把 ``PCPB0028US`` 拆成货号 + 站点。
+SITE_CODES: frozenset[str] = frozenset(
+    {"US", "UK", "DE", "FR", "IT", "ES", "AU", "CA", "JP", "EU", "NL", "PL"}
+)
+
 
 @dataclass(frozen=True)
 class DatasheetRow:
@@ -275,30 +280,77 @@ def parse_quantity_marker(residue: str) -> int | None:
     return None
 
 
-def _matches(prefix: str, sku: str) -> bool:
-    """Prefix match that refuses to run into another product's number.
+@dataclass(frozen=True)
+class Residue:
+    """什么被认出来了：站点后缀、打包数；认不出时 ``problem`` 说明原因。"""
 
-    ``PCPB0028`` must match ``PCPB0028US`` (site suffix) but not
-    ``PCPB00280``; ``EF-``/``EF2-`` variants are accepted as well.
+    site: str
+    pack: int
+    problem: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return not self.problem
+
+
+def split_residue(prefix: str, suffix: str) -> Residue:
+    """把最长匹配留下的前缀/后缀拆成「站点后缀 + 打包数 + 变体尾」。
+
+    认得的写法：前缀 ``''``/``EF-``/``EF2-``/``P10``；后缀 ``''``/``US``/
+    ``US x2``/`` x4``/``-XL``（变体尾）。其余（如 ``0-RED``）判为认不出，
+    不猜——这正是 ``GJHW00310-RED`` 不会被 ``GJHW0031`` 抢走的原因。
     """
 
-    for candidate in (prefix, f"EF-{prefix}", f"EF2-{prefix}"):
-        if not sku.startswith(candidate):
-            continue
-        rest = sku[len(candidate) :]
-        if not rest or not rest[0].isdigit():
-            return True
-    return False
+    head = (prefix or "").strip()
+    tail = (suffix or "").strip()
+
+    site = ""
+    upper_tail = tail.upper()
+    if len(upper_tail) >= 2 and upper_tail[:2] in SITE_CODES:
+        site = upper_tail[:2]
+        tail = tail[2:].strip()
+
+    head_pack = 1
+    upper_head = head.upper()
+    if not head or upper_head in {"EF-", "EF2-"}:
+        head_pack = 1
+    elif upper_head.startswith("P") and upper_head[1:].isdigit():
+        head_pack = int(upper_head[1:])
+    else:
+        return Residue(site=site, pack=0, problem=f"前缀 {head!r} 认不出")
+
+    # 变体尾：'-XL' / '-LT-G' 这种以连字符开头、到下一个空格为止的片段
+    if tail.startswith("-"):
+        token, _, rest = tail.partition(" ")
+        if any(ch.isdigit() for ch in token):
+            return Residue(site=site, pack=0, problem=f"变体尾 {token!r} 含数字，认不出")
+        tail = rest.strip()
+
+    tail_pack = parse_quantity_marker(tail)
+    if tail_pack is None:
+        return Residue(site=site, pack=0, problem=f"后缀 {tail!r} 认不出")
+
+    if head_pack > 1 and tail_pack > 1 and head_pack != tail_pack:
+        return Residue(
+            site=site, pack=0, problem=f"前缀打包数 {head_pack} 与后缀打包数 {tail_pack} 冲突"
+        )
+    return Residue(site=site, pack=max(head_pack, tail_pack))
 
 
-def match_target(sku: str, targets: Mapping[str, float]) -> tuple[str, str, int] | None:
-    """Return ``(target_key, base_sku, pack)`` for a datasheet SKU."""
+def match_target(sku: str, targets: Mapping[str, float]) -> tuple[str, int, str] | None:
+    """用最长匹配把数据表 SKU 对到价格表键上，返回 ``(key, pack, site)``。
 
-    base, pack = parse_pack(sku)
-    for key in sorted(targets, key=len, reverse=True):
-        if _matches(key, base):
-            return key, base, pack
-    return None
+    匹配长度优先（KMP），残留文本必须能解释成「站点后缀 + 打包数」才算命中，
+    所以 ``GJHW00310-RED`` 不会被 ``GJHW0031`` 抢走。
+    """
+
+    match = longest_match(sku, list(targets))
+    if match is None:
+        return None
+    residue = split_residue(match.prefix, match.suffix)
+    if not residue.ok:
+        return None
+    return match.sku, residue.pack, residue.site
 
 
 @dataclass(frozen=True)
@@ -398,15 +450,15 @@ def plan_price_changes(
     rows: Sequence[DatasheetRow],
     targets: Mapping[str, float],
     *,
-    pack_policy: PackPolicy = "same",
+    pack_policy: PackPolicy = "multiply",
 ) -> PricePlan:
     """Plan price writes so every row reaches its minimum selling price.
 
     ``pack_policy``:
 
-    * ``same``     - pack rows are treated like any other row (production default)
-    * ``skip``     - pack rows are left untouched
-    * ``multiply`` - a pack row's target is multiplied by its pack size
+    * ``multiply`` - 打包行目标 = 最低售价 × 打包数（选定方案 B，默认）
+    * ``same``     - 打包行与单件同价（旧生产口径）
+    * ``skip``     - 打包行不动
     """
 
     postage = resolve_postage(rows)
@@ -419,7 +471,7 @@ def plan_price_changes(
         match = match_target(row.sku, targets)
         if match is None:
             continue
-        key, _base, pack = match
+        key, pack, _site = match
         hit.add(key)
 
         if pack > 1 and pack_policy == "skip":
@@ -430,7 +482,8 @@ def plan_price_changes(
 
         matched += 1
         shipping = postage.by_row[row.row]
-        target = float(targets[key]) * (pack if pack_policy == "multiply" and pack > 1 else 1)
+        multiplier = pack if pack_policy == "multiply" and pack > 1 else 1
+        target = float(targets[key]) * multiplier
         total = round(row.price + shipping, 4)
         if total >= target:
             continue

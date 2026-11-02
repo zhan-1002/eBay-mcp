@@ -34,16 +34,18 @@ def test_parse_pack_variants() -> None:
     assert parse_pack("A x0") == ("A", 0)
 
 
-def test_prefix_match_allows_site_suffix_but_not_longer_numbers() -> None:
+def test_longest_match_allows_site_suffix_but_not_longer_numbers() -> None:
     targets = {"GJHW0031": 40.0, "PCPB0028": 35.0, "1371812": 10.9}
 
-    # site suffix is part of the SKU, not another product
-    assert match_target("PCPB0028US", targets)[0] == "PCPB0028"
-    # a longer number must not be hijacked by a shorter prefix
+    # 站点后缀属于同一个货号
+    assert match_target("PCPB0028US", targets) == ("PCPB0028", 1, "US")
+    # 更长的数字不能被短前缀抢走
     assert match_target("GJHW00310-RED", targets) is None
-    # EF- variants are acknowledged
-    assert match_target("EF-1371812-XL", targets)[0] == "1371812"
-    assert match_target("EF2-1371812", targets)[0] == "1371812"
+    # EF-/EF2- 前缀 + 变体尾
+    assert match_target("EF-1371812-XL", targets) == ("1371812", 1, "")
+    assert match_target("EF2-1371812", targets) == ("1371812", 1, "")
+    # 前缀打包 + 站点后缀
+    assert match_target("P10PCPB0028US", targets) == ("PCPB0028", 10, "US")
 
 
 def test_postage_is_inherited_within_a_datasheet() -> None:
@@ -86,11 +88,10 @@ def test_price_is_raised_so_the_total_lands_on_the_minimum() -> None:
     ]
     plan = plan_price_changes(rows, {"ZMHB0004": 200.0})
 
+    # 默认 pack_policy=multiply：单件 200-5=195，x2 目标 400-5=395
     assert [c.row for c in plan.changes] == [6, 8]
-    # single unit: 200 - 5 = 195 (total 200)
     assert plan.changes[0].new == pytest.approx(195.0)
-    # pack row inherits the same 5 of postage -> same price under pack_policy=same
-    assert plan.changes[1].new == pytest.approx(195.0)
+    assert plan.changes[1].new == pytest.approx(395.0)
     assert plan.changes[1].group_postage == pytest.approx(5.0)
 
 

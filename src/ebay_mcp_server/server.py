@@ -77,6 +77,12 @@ LOCAL_SESSION_ACTION = ToolAnnotations(
     idempotentHint=False,
     openWorldHint=True,
 )
+LOCAL_FILE_WRITE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 
 
 def _register_skill_resources() -> None:
@@ -606,6 +612,32 @@ async def soldeazy_preview_price_change(
         return tool_error(
             "soldeazy_preview_price_change",
             EbayMcpError("SOLDEAZY_PREVIEW_ERROR", f"预览失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=LOCAL_FILE_WRITE)
+async def soldeazy_stock_template(out_path: str, skus: list[str]) -> dict[str, Any]:
+    """Write the stock sheet that the operator fills in by hand.
+
+    One row per actual SKU with an empty ``库存`` column; only that column is
+    read back, so the operator never edits SKU spellings. Requires the
+    ``soldeazy`` extra (openpyxl).
+    """
+    try:
+        from ebay_mcp_server.providers.soldeazy_stock import write_stock_template
+
+        target = write_stock_template(out_path, skus)
+        return success(
+            "soldeazy_stock_template",
+            "local-writer",
+            {"path": str(target), "rows": len(skus)},
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_stock_template", exc)
+    except Exception as exc:  # pragma: no cover - 依赖缺失/磁盘错误
+        return tool_error(
+            "soldeazy_stock_template",
+            EbayMcpError("SOLDEAZY_TEMPLATE_ERROR", f"生成库存模板失败: {exc}"),
         )
 
 

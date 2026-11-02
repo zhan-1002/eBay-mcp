@@ -24,6 +24,10 @@ dev = [
 sales = [
     "playwright>=1.55,<2",
 ]
+soldeazy = [
+    "playwright>=1.55,<2",
+    "openpyxl>=3.1,<4",
+]
 
 [project.scripts]
 ebay-mcp-server = "ebay_mcp_server.server:main"
