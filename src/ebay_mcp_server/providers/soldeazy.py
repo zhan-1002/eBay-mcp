@@ -119,8 +119,16 @@ SELECTORS: dict[str, Locator] = {
     "export_profile": Locator("Add / edit an Export Profile", "//select", "#divBulkExportDialog select"),
     "export_confirm": Locator("Bulk Export Options_export", "//button"),
     "export_dialog": Locator("批量导出弹层", '//div[@id="jqizoo"]', "#jqizoo"),
-    "export_profile_select": Locator("导出档案下拉", "//select[@name='listExppf']", "select[name=listExppf]"),
-    "export_format_select": Locator("导出格式下拉", "//select[@name='listExpfmt']", "select[name=listExpfmt]"),
+    "export_profile_select": Locator(
+        "导出档案下拉",
+        "//div[@id='jqizoo']//select[@name='listExppf']",
+        "#jqizoo select[name=listExppf]",
+    ),
+    "export_format_select": Locator(
+        "导出格式下拉",
+        "//div[@id='jqizoo']//select[@name='listExpfmt']",
+        "#jqizoo select[name=listExpfmt]",
+    ),
     "bulk_sync_button": Locator("Bulk SYNC", '//form//table//tr/td/input[@type="button"][@id="btn_bulkdalign"]', "#btn_bulkdalign"),
     "sync_dialog": Locator("同步弹框", '//div[@id="jqizoo"]', "#jqizoo"),
     "sync_price_postage": Locator("Price Postage", "//input"),
@@ -295,6 +303,7 @@ class SoldeazyBrowser:
             await (await self._locate("search_sku")).fill(sku_terms)
             if site:
                 await self._select_site(site)
+            await self._select_scope_whole_result()
             await (await self._locate("search_button")).click()
             await page.wait_for_load_state("domcontentloaded")
             await asyncio.sleep(self.settings.soldeazy_min_delay)
@@ -314,6 +323,54 @@ class SoldeazyBrowser:
                 "row_count": len(records),
                 "rows": records,
             }
+
+    async def _ensure_rows_selected(self) -> int:
+        """导出弹层只在「有勾选」时出现，所以导出前先全选当前结果。"""
+
+        page = await self._ensure_page()
+        boxes = page.locator("#tbl_dSheet input[type=checkbox]")
+        total = await boxes.count()
+        if not total:
+            raise EbayMcpError(
+                "SOLDEAZY_NO_RESULT", "搜索结果里没有可勾选的数据表，无法导出。"
+            )
+
+        head = page.locator("#tbl_dSheet tr").first.locator("input[type=checkbox]").first
+        try:
+            if await head.count():
+                if not await head.is_checked():
+                    await head.check(force=True)
+                selected = await page.locator("#tbl_dSheet input[type=checkbox]:checked").count()
+                if selected > 0:
+                    return selected
+        except Exception:  # noqa: BLE001 - 表头没有全选就逐行勾
+            pass
+
+        selected = 0
+        for index in range(min(total, 25)):
+            box = boxes.nth(index)
+            try:
+                if not await box.is_checked():
+                    await box.check(force=True)
+                    selected += 1
+            except Exception:  # noqa: BLE001
+                continue
+        return selected
+
+    async def _select_scope_whole_result(self) -> None:
+        """导出范围要覆盖整个搜索结果，不能只导勾选行。
+
+        真机上这是表单里的 `select[name=bulk_option]`：`whole_result` /
+        `partial_result` / `selected_items`。找不到就当页面不提供该控件。
+        """
+
+        page = await self._ensure_page()
+        scope = page.locator("select[name=bulk_option]").first
+        try:
+            if await scope.count():
+                await scope.select_option("whole_result", timeout=5000)
+        except Exception:  # noqa: BLE001 - 只是尽力设置
+            pass
 
     async def _select_site(self, site: str) -> None:
         """站点下拉里用的是英文站点名（US/UK/Germany…），不是 US/DE 这种代码。"""
@@ -346,6 +403,10 @@ class SoldeazyBrowser:
 
         page = await self._ensure_page()
         profile = (self.settings.soldeazy_export_profile or "55").strip()
+
+        selected = await self._ensure_rows_selected()
+        if not selected:
+            raise EbayMcpError("SOLDEAZY_NO_SELECTION", "未能勾选任何数据表，导出中止。")
 
         await (await self._locate("export_button")).click()
         dialog = await self._locate("export_dialog")
