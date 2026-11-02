@@ -881,6 +881,44 @@ async def soldeazy_update_stock(confirm_token: str, dry_run: bool = True) -> dic
         )
 
 
+@mcp.tool(annotations=READ_ONLY_LOCAL)
+async def soldeazy_change_history(
+    limit: int = 20,
+    site: str = "",
+    kind: str = "",
+) -> dict[str, Any]:
+    """Read the local Soldeazy write history (newest first).
+
+    Every applied write appends one JSONL record: token, site, search string,
+    uploaded file, changed cells and the sync result. ``site``/``kind`` filter
+    the list (kind is ``price`` or ``stock``). Corrupt lines are skipped rather
+    than failing the whole history.
+    """
+    try:
+        from ebay_mcp_server.providers.soldeazy_write import read_manifest
+
+        if kind and kind not in {"price", "stock"}:
+            raise EbayMcpError("SOLDEAZY_HISTORY_KIND", "kind 只能是 price 或 stock。")
+        path = _manifest_path()
+        records = read_manifest(path, limit=max(1, min(int(limit), 200)), site=site, kind=kind)
+        return success(
+            "soldeazy_change_history",
+            "local-manifest",
+            {
+                "manifest": path,
+                "count": len(records),
+                "records": records,
+            },
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_change_history", exc)
+    except Exception as exc:  # pragma: no cover - 磁盘异常
+        return tool_error(
+            "soldeazy_change_history",
+            EbayMcpError("SOLDEAZY_HISTORY_ERROR", f"读取变更历史失败: {exc}"),
+        )
+
+
 @mcp.tool(annotations=LOCAL_FILE_WRITE)
 async def soldeazy_stock_template(out_path: str, skus: list[str]) -> dict[str, Any]:
     """Write the stock sheet that the operator fills in by hand.

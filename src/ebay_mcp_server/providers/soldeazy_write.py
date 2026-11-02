@@ -229,3 +229,42 @@ def to_cell_changes(changes: Sequence[Any], field: Literal["price", "stock"]) ->
 
     column = "price" if field == "price" else "qty"
     return [(column, int(change.row), change.new) for change in changes]
+
+def read_manifest(
+    path: str | Path,
+    *,
+    limit: int = 20,
+    site: str = "",
+    kind: str = "",
+) -> list[dict[str, Any]]:
+    """读写操作清单，返回最近 `limit` 条（新的在前）。
+
+    坏行（手工改坏、写一半）直接跳过，不让一条脏记录毁掉整份历史。
+    """
+
+    target = Path(path)
+    if not target.is_file():
+        return []
+
+    wanted_site = (site or "").strip().upper()
+    wanted_kind = (kind or "").strip().lower()
+    records: list[dict[str, Any]] = []
+    with target.open(encoding="utf-8") as handle:
+        for line in handle:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                record = json.loads(text)
+            except ValueError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            if wanted_site and str(record.get("site", "")).upper() != wanted_site:
+                continue
+            if wanted_kind and str(record.get("kind", "")).lower() != wanted_kind:
+                continue
+            records.append(record)
+
+    records.reverse()
+    return records[: max(0, int(limit))]

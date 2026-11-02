@@ -13,6 +13,7 @@ from ebay_mcp_server.providers.soldeazy_write import (
     append_manifest,
     build_token,
     check_drift,
+    read_manifest,
     rows_to_state,
     same_plan,
     to_cell_changes,
@@ -120,3 +121,39 @@ def test_manifest_appends_one_json_line_per_write(tmp_path) -> None:
     assert len(lines) == 2
     assert json.loads(lines[0])["token"] == "abc"
     assert "at" in json.loads(lines[1])
+
+
+def test_read_manifest_returns_newest_first(tmp_path) -> None:
+    path = tmp_path / "m.jsonl"
+    append_manifest(path, {"token": "a", "site": "US", "kind": "price"})
+    append_manifest(path, {"token": "b", "site": "DE", "kind": "stock"})
+    append_manifest(path, {"token": "c", "site": "US", "kind": "stock"})
+
+    assert [r["token"] for r in read_manifest(path)] == ["c", "b", "a"]
+    assert read_manifest(path, limit=2)[0]["token"] == "c"
+
+
+def test_read_manifest_filters_by_site_and_kind(tmp_path) -> None:
+    path = tmp_path / "m.jsonl"
+    append_manifest(path, {"token": "a", "site": "US", "kind": "price"})
+    append_manifest(path, {"token": "b", "site": "DE", "kind": "stock"})
+    append_manifest(path, {"token": "c", "site": "us", "kind": "stock"})
+
+    assert [r["token"] for r in read_manifest(path, site="US")] == ["c", "a"]
+    assert [r["token"] for r in read_manifest(path, site="us", kind="stock")] == ["c"]
+    assert read_manifest(path, kind="price")[0]["token"] == "a"
+
+
+def test_read_manifest_skips_corrupt_lines(tmp_path) -> None:
+    path = tmp_path / "m.jsonl"
+    append_manifest(path, {"token": "a"})
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("{not json\n")
+        handle.write("[1,2,3]\n")
+    append_manifest(path, {"token": "b"})
+
+    assert [r["token"] for r in read_manifest(path)] == ["b", "a"]
+
+
+def test_read_manifest_handles_a_missing_file(tmp_path) -> None:
+    assert read_manifest(tmp_path / "nope.jsonl") == []

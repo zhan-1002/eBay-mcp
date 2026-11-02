@@ -29,8 +29,9 @@
 - `soldeazy_update_price`：凭令牌改价 → 上传 → BULK SYNC（价格及邮费）。
 - `soldeazy_update_stock`：凭令牌改库存 → 上传 → BULK SYNC（刊登数量）。
 - `soldeazy_stock_template`：生成运营手填的库存表模板。
+- `soldeazy_change_history`：读本地变更清单（谁在什么时候改了哪些行、同步结果），新的在前。
 
-共 17 个只读工具、2 个本地会话工具、1 个本地写文件工具和 2 个远端写工具。
+共 18 个只读工具、2 个本地会话工具、1 个本地写文件工具和 2 个远端写工具。
 写工具默认关闭：没有 `SOLDEAZY_WRITE_ENABLED=1` 一律拒绝。
 
 ## Soldeazy 改价/改库存（进行中）
