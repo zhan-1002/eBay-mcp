@@ -657,19 +657,15 @@ def plan_stock_changes(
     rows: Sequence[DatasheetRow],
     stock_by_sku: Mapping[str, float],
     *,
-    divide_by_pack: bool = True,
     catalog: Sequence[str] | None = None,
 ) -> StockPlan:
     """Plan absolute stock writes against the *actual* SKU.
 
-    ``stock_by_sku`` is keyed by the actual product code. When ``catalog`` (the
-    actual-SKU list) is supplied, a datasheet SKU is resolved by longest KMP
-    match instead of by stripping a suffix; the leftover text then yields the
-    pack multiplier (`` x2`` / ``P10``). Anything that cannot be resolved is
-    reported, never guessed.
+    ``stock_by_sku`` 里填的就是这个产品本身的件数，**不做打包换算**：
+    无论该刊登是单件还是 4 件装，刊登数量直接写这个数。
 
-    A pack listing receives ``floor(stock / pack)`` so the listed quantity can
-    actually be fulfilled.
+    给了 ``catalog`` 时用 KMP 最长匹配找回实际 SKU；匹配残留认不出（如
+    ``-LT-G``）则报出来，不猜。
     """
 
     changes: list[Change] = []
@@ -683,24 +679,22 @@ def plan_stock_changes(
                 unresolved.append({"sku": row.sku, "reason": "在 SKU 目录里找不到任何匹配"})
                 continue
             base = match.sku
-            pack = parse_quantity_marker(match.residue)
-            if pack is None:
+            if parse_quantity_marker(match.residue) is None:
                 unresolved.append(
                     {
                         "sku": row.sku,
-                        "reason": f"匹配到 {base}，但残留 {match.residue!r} 认不出打包数",
+                        "reason": f"匹配到 {base}，但残留 {match.residue!r} 认不出",
                     }
                 )
                 continue
         else:
-            base, pack = parse_pack(row.sku)
+            base, _pack = parse_pack(row.sku)
 
         if base not in stock_by_sku:
             no_stock.add(base)
             continue
         stock = float(stock_by_sku[base])
-        wanted = float(int(stock // pack)) if divide_by_pack and pack > 1 else stock
-        if wanted == row.qty:
+        if stock == row.qty:
             continue
         changes.append(
             Change(
@@ -708,11 +702,8 @@ def plan_stock_changes(
                 sku=row.sku,
                 field="qty",
                 old=row.qty,
-                new=wanted,
-                reason=(
-                    f"实际 SKU {base} 库存 {stock:g}"
-                    + (f" ÷ 打包数 {pack}" if pack > 1 and divide_by_pack else "")
-                ),
+                new=stock,
+                reason=f"实际 SKU {base} 库存 {stock:g}",
             )
         )
 

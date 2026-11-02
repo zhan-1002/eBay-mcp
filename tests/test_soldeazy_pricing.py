@@ -185,7 +185,8 @@ def test_unmatched_targets_are_reported() -> None:
     assert plan.matched_rows == 1
 
 
-def test_stock_targets_the_actual_sku_and_divides_packs() -> None:
+def test_stock_is_written_as_is_without_pack_conversion() -> None:
+    # 库存就是该产品本身的件数：x2 行也直接写 101，不除以 2
     rows = [
         _row(3, "ZMHB0004US", 10.0, 0.0),
         DatasheetRow(4, "1", "", "ZMHB0004US x2", qty=999.0, price=10.0, postage=0.0),
@@ -193,14 +194,14 @@ def test_stock_targets_the_actual_sku_and_divides_packs() -> None:
     ]
     plan = plan_stock_changes(rows, {"ZMHB0004US": 101})
 
-    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0), (4, 50.0)]
+    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0), (4, 101.0)]
     assert plan.no_stock == ["OTHER001"]
-    assert "÷ 打包数 2" in plan.changes[1].reason
+    assert "÷" not in plan.changes[1].reason
 
 
-def test_stock_can_skip_pack_division() -> None:
-    rows = [_row(4, "ZMHB0004US x2", 10.0, 0.0)]
-    plan = plan_stock_changes(rows, {"ZMHB0004US": 101}, divide_by_pack=False)
+def test_stock_ignores_the_pack_marker() -> None:
+    rows = [_row(4, "ZMHB0004US x8", 10.0, 0.0)]
+    plan = plan_stock_changes(rows, {"ZMHB0004US": 101})
     assert plan.changes[0].new == pytest.approx(101.0)
 
 
@@ -341,11 +342,8 @@ def test_stock_uses_longest_match_and_pack_prefix() -> None:
     catalog = ["ZMHB0004US", "ZMHB0004"]
     plan = plan_stock_changes(rows, {"ZMHB0004US": 101}, catalog=catalog)
 
-    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0), (4, 50.0), (5, 10.0)]
-    assert [c.reason for c in plan.changes][1:] == [
-        "实际 SKU ZMHB0004US 库存 101 ÷ 打包数 2",
-        "实际 SKU ZMHB0004US 库存 101 ÷ 打包数 10",
-    ]
+    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0), (4, 101.0), (5, 101.0)]
+    assert [c.reason for c in plan.changes] == ["实际 SKU ZMHB0004US 库存 101"] * 3
     assert plan.unresolved == []
 
 
@@ -358,7 +356,7 @@ def test_stock_reports_unknown_leftovers_instead_of_guessing() -> None:
 
     assert plan.changes == []
     assert [item["sku"] for item in plan.unresolved] == ["ZMHB0004US-LT-G", "QQQQ7777"]
-    assert "认不出打包数" in plan.unresolved[0]["reason"]
+    assert "认不出" in plan.unresolved[0]["reason"]
     assert "找不到任何匹配" in plan.unresolved[1]["reason"]
 
 def test_groups_follow_row_id_even_for_adjacent_rows_with_different_ids() -> None:
