@@ -1,4 +1,4 @@
-﻿"""Tests for the Soldeazy pricing and stock rules (no browser, no network)."""
+"""Tests for the Soldeazy pricing and stock rules (no browser, no network)."""
 
 from __future__ import annotations
 
@@ -379,3 +379,24 @@ def test_groups_follow_row_id_even_for_adjacent_rows_with_different_ids() -> Non
     # 每组各自算基价：只有 4558721 那一组有两行，倍数才有意义
     assert ladders["4558721"].factors == {20: 1, 21: 2}
     assert ladders["4558719"].factors == {19: 1}
+
+def test_lone_row_below_minimum_is_treated_as_a_single_unit() -> None:
+    # 2026-11-02 确认：组内孤身且现价低于最低售价 -> 就是单件，直接改。
+    # 即使 SKU 上带 x4 也不按 4 件放大。
+    rows = [
+        DatasheetRow(12, "4546602", "", "ZMHB0004US x4", qty=50.0, price=91.48, postage=0.0),
+        DatasheetRow(13, "4546658", "", "ZMHB0004US", qty=50.0, price=28.48, postage=0.0),
+    ]
+    plan = plan_price_changes(rows, {"ZMHB0004": 200.0})
+
+    assert [(c.row, c.new) for c in plan.changes] == [(12, 200.0), (13, 200.0)]
+    assert all("独自成组" in note for note in plan.notes)
+    assert all(
+        ladder.factors == {ladder.base_row: 1} for ladder in plan.ladders.values()
+    )
+
+
+def test_lone_row_above_minimum_is_left_alone() -> None:
+    rows = [DatasheetRow(5, "4546600", "", "P10ZMHB0004US", qty=50.0, price=299.78, postage=0.0)]
+    plan = plan_price_changes(rows, {"ZMHB0004": 200.0})
+    assert plan.changes == []
