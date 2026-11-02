@@ -664,8 +664,8 @@ def plan_stock_changes(
     ``stock_by_sku`` 里填的就是这个产品本身的件数，**不做打包换算**：
     无论该刊登是单件还是 4 件装，刊登数量直接写这个数。
 
-    给了 ``catalog`` 时用 KMP 最长匹配找回实际 SKU；匹配残留认不出（如
-    ``-LT-G``）则报出来，不猜。
+    给了 ``catalog`` 时用 KMP 最长匹配找回实际 SKU；匹配到就直接用，**不看匹配残留**
+    （`` x4``、``P10``、``-LT-G`` 一律忽略）——库存只认这个产品本身。
     """
 
     changes: list[Change] = []
@@ -679,14 +679,6 @@ def plan_stock_changes(
                 unresolved.append({"sku": row.sku, "reason": "在 SKU 目录里找不到任何匹配"})
                 continue
             base = match.sku
-            if parse_quantity_marker(match.residue) is None:
-                unresolved.append(
-                    {
-                        "sku": row.sku,
-                        "reason": f"匹配到 {base}，但残留 {match.residue!r} 认不出",
-                    }
-                )
-                continue
         else:
             base, _pack = parse_pack(row.sku)
 

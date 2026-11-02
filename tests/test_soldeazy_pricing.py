@@ -347,17 +347,18 @@ def test_stock_uses_longest_match_and_pack_prefix() -> None:
     assert plan.unresolved == []
 
 
-def test_stock_reports_unknown_leftovers_instead_of_guessing() -> None:
+def test_stock_ignores_the_match_residue_and_only_reports_a_missing_sku() -> None:
     rows = [
         DatasheetRow(3, "1", "", "ZMHB0004US-LT-G", qty=50.0, price=1.0, postage=0.0),
         DatasheetRow(4, "1", "", "QQQQ7777", qty=50.0, price=1.0, postage=0.0),
     ]
     plan = plan_stock_changes(rows, {"ZMHB0004US": 101}, catalog=["ZMHB0004US"])
 
-    assert plan.changes == []
-    assert [item["sku"] for item in plan.unresolved] == ["ZMHB0004US-LT-G", "QQQQ7777"]
-    assert "认不出" in plan.unresolved[0]["reason"]
-    assert "找不到任何匹配" in plan.unresolved[1]["reason"]
+    # 残留 -LT-G 不再拦：能匹配到产品就按该产品写库存
+    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0)]
+    assert [item["sku"] for item in plan.unresolved] == ["QQQQ7777"]
+    assert "找不到任何匹配" in plan.unresolved[0]["reason"]
+
 
 def test_groups_follow_row_id_even_for_adjacent_rows_with_different_ids() -> None:
     # 第 20/21 行紧挨着，但各有 Row ID -> 两组，不能因为 SKU 相同就合并
