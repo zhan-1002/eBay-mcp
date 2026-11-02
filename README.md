@@ -25,9 +25,10 @@
 - `soldeazy_open_login`：打开 Soldeazy 登录页并保留浏览器会话。
 - `soldeazy_search_datasheet`：按站点 + SKU 通配串读取数据表行（Row ID / SKU / 价格 / 运费 / 数量）。
 - `soldeazy_preview_price_change`：离线算价预览，只读不写。
+- `soldeazy_preview_stock_change`：读运营库存表 + 线上行，出库存改动预览。
 - `soldeazy_stock_template`：生成运营手填的库存表模板。
 
-共 16 个只读工具、2 个本地会话工具和 1 个本地写文件工具，当前不注册任何 eBay 写工具。
+共 17 个只读工具、2 个本地会话工具和 1 个本地写文件工具，当前不注册任何 eBay 写工具。
 
 ## Soldeazy 改价/改库存（进行中）
 
