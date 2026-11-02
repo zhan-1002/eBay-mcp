@@ -157,6 +157,124 @@ def parse_pack(sku: str) -> tuple[str, int]:
     return text, 1
 
 
+# --------------------------------------------------------------------------
+# 实际 SKU 匹配：KMP 最长匹配
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class SkuMatch:
+    """A datasheet SKU resolved against the actual-SKU catalog."""
+
+    sku: str  # 目录里的实际 SKU（原样大小写）
+    matched_length: int
+    position: int
+    prefix: str  # 匹配段之前的残留，例如 "P10"
+    suffix: str  # 匹配段之后的残留，例如 " x2"
+
+    @property
+    def residue(self) -> str:
+        return f"{self.prefix}{self.suffix}"
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "sku": self.sku,
+            "matched_length": self.matched_length,
+            "position": self.position,
+            "prefix": self.prefix,
+            "suffix": self.suffix,
+        }
+
+
+def _failure_table(pattern: str) -> list[int]:
+    """KMP 的 next 数组：``table[i]`` = 前 i+1 个字符的最长真前缀=后缀长度。"""
+
+    table = [0] * len(pattern)
+    length = 0
+    for index in range(1, len(pattern)):
+        while length and pattern[index] != pattern[length]:
+            length = table[length - 1]
+        if pattern[index] == pattern[length]:
+            length += 1
+        table[index] = length
+    return table
+
+
+def kmp_search(text: str, pattern: str) -> list[int]:
+    """Return every start offset where ``pattern`` occurs in ``text`` (KMP)."""
+
+    if not pattern or len(pattern) > len(text):
+        return []
+    table = _failure_table(pattern)
+    hits: list[int] = []
+    matched = 0
+    for index, char in enumerate(text):
+        while matched and char != pattern[matched]:
+            matched = table[matched - 1]
+        if char == pattern[matched]:
+            matched += 1
+            if matched == len(pattern):
+                hits.append(index - len(pattern) + 1)
+                matched = table[matched - 1]
+    return hits
+
+
+def longest_match(display_sku: str, catalog: Sequence[str]) -> SkuMatch | None:
+    """Pick the catalog SKU covering the largest span of ``display_sku``.
+
+    与"剥后缀"相比，这里不预设规则：谁覆盖的字符最多谁就是实际 SKU，
+    并且把匹配段前后的残留一并返回，供调用方判断打包数（`` x2``、``P10``）。
+    同长度时取更靠前的匹配，再同则取字典序较小的，保证结果稳定。
+    """
+
+    text = (display_sku or "").strip().upper()
+    if not text:
+        return None
+
+    best: SkuMatch | None = None
+    seen: set[str] = set()
+    for raw in catalog:
+        entry = str(raw or "").strip()
+        key = entry.upper()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        for position in kmp_search(text, key):
+            candidate = SkuMatch(
+                sku=entry,
+                matched_length=len(key),
+                position=position,
+                prefix=display_sku.strip()[:position],
+                suffix=display_sku.strip()[position + len(key) :],
+            )
+            if best is None or _better(candidate, best):
+                best = candidate
+    return best
+
+
+def _better(candidate: SkuMatch, current: SkuMatch) -> bool:
+    if candidate.matched_length != current.matched_length:
+        return candidate.matched_length > current.matched_length
+    if candidate.position != current.position:
+        return candidate.position < current.position
+    return candidate.sku < current.sku
+
+
+def parse_quantity_marker(residue: str) -> int | None:
+    """Read the pack multiplier out of the leftover text.
+
+    ``''`` → 1、``' x2'`` → 2、``'P10'`` → 10；其余返回 ``None``（不认识就不猜）。
+    """
+
+    text = (residue or "").strip()
+    if not text:
+        return 1
+    lowered = text.lower()
+    if lowered.startswith("x") and lowered[1:].strip().isdigit() and len(lowered) <= 5:
+        return int(lowered[1:].strip())
+    if lowered.startswith("p") and lowered[1:].strip().isdigit() and len(lowered) <= 4:
+        return int(lowered[1:].strip())
+    return None
+
+
 def _matches(prefix: str, sku: str) -> bool:
     """Prefix match that refuses to run into another product's number.
 
@@ -343,29 +461,65 @@ def plan_price_changes(
     )
 
 
+@dataclass(frozen=True)
+class StockPlan:
+    changes: list[Change]
+    no_stock: list[str]  # 认出的实际 SKU 但没有库存数字
+    unresolved: list[dict[str, str]]  # 连实际 SKU 都没认出来（最大匹配不够/残留不认识）
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "changes": [change.as_dict() for change in self.changes],
+            "changed_rows": len(self.changes),
+            "no_stock": self.no_stock,
+            "unresolved": self.unresolved,
+        }
+
+
 def plan_stock_changes(
     rows: Sequence[DatasheetRow],
     stock_by_sku: Mapping[str, float],
     *,
     divide_by_pack: bool = True,
-) -> tuple[list[Change], list[str]]:
+    catalog: Sequence[str] | None = None,
+) -> StockPlan:
     """Plan absolute stock writes against the *actual* SKU.
 
-    ``stock_by_sku`` is keyed by the actual product code (no site suffix, no
-    pack suffix). A listing row is only touched when its actual SKU has a
-    stock figure; a pack listing receives ``floor(stock / pack)`` so the listed
-    quantity can actually be fulfilled.
+    ``stock_by_sku`` is keyed by the actual product code. When ``catalog`` (the
+    actual-SKU list) is supplied, a datasheet SKU is resolved by longest KMP
+    match instead of by stripping a suffix; the leftover text then yields the
+    pack multiplier (`` x2`` / ``P10``). Anything that cannot be resolved is
+    reported, never guessed.
 
-    Returns ``(changes, unmatched_skus)``.
+    A pack listing receives ``floor(stock / pack)`` so the listed quantity can
+    actually be fulfilled.
     """
 
     changes: list[Change] = []
-    unmatched: set[str] = set()
+    no_stock: set[str] = set()
+    unresolved: list[dict[str, str]] = []
 
     for row in rows:
-        base, pack = parse_pack(row.sku)
+        if catalog:
+            match = longest_match(row.sku, catalog)
+            if match is None:
+                unresolved.append({"sku": row.sku, "reason": "在 SKU 目录里找不到任何匹配"})
+                continue
+            base = match.sku
+            pack = parse_quantity_marker(match.residue)
+            if pack is None:
+                unresolved.append(
+                    {
+                        "sku": row.sku,
+                        "reason": f"匹配到 {base}，但残留 {match.residue!r} 认不出打包数",
+                    }
+                )
+                continue
+        else:
+            base, pack = parse_pack(row.sku)
+
         if base not in stock_by_sku:
-            unmatched.add(base)
+            no_stock.add(base)
             continue
         stock = float(stock_by_sku[base])
         wanted = float(int(stock // pack)) if divide_by_pack and pack > 1 else stock
@@ -385,7 +539,11 @@ def plan_stock_changes(
             )
         )
 
-    return changes, sorted(unmatched)
+    return StockPlan(
+        changes=changes,
+        no_stock=sorted(no_stock),
+        unresolved=unresolved,
+    )
 
 
 def rows_from_matrix(

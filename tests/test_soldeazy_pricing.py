@@ -1,4 +1,4 @@
-"""Tests for the Soldeazy pricing and stock rules (no browser, no network)."""
+﻿"""Tests for the Soldeazy pricing and stock rules (no browser, no network)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,9 @@ import pytest
 
 from ebay_mcp_server.providers.soldeazy_pricing import (
     Change,
+    kmp_search,
+    longest_match,
+    parse_quantity_marker,
     DatasheetRow,
     load_targets,
     match_target,
@@ -129,23 +132,23 @@ def test_stock_targets_the_actual_sku_and_divides_packs() -> None:
         DatasheetRow(4, "1", "", "ZMHB0004US x2", qty=999.0, price=10.0, postage=0.0),
         _row(5, "OTHER001", 10.0, 0.0),
     ]
-    changes, unmatched = plan_stock_changes(rows, {"ZMHB0004US": 101})
+    plan = plan_stock_changes(rows, {"ZMHB0004US": 101})
 
-    assert [(c.row, c.new) for c in changes] == [(3, 101.0), (4, 50.0)]
-    assert unmatched == ["OTHER001"]
-    assert "÷ 打包数 2" in changes[1].reason
+    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0), (4, 50.0)]
+    assert plan.no_stock == ["OTHER001"]
+    assert "÷ 打包数 2" in plan.changes[1].reason
 
 
 def test_stock_can_skip_pack_division() -> None:
     rows = [_row(4, "ZMHB0004US x2", 10.0, 0.0)]
-    changes, _ = plan_stock_changes(rows, {"ZMHB0004US": 101}, divide_by_pack=False)
-    assert changes[0].new == pytest.approx(101.0)
+    plan = plan_stock_changes(rows, {"ZMHB0004US": 101}, divide_by_pack=False)
+    assert plan.changes[0].new == pytest.approx(101.0)
 
 
 def test_stock_leaves_matching_rows_untouched() -> None:
     rows = [DatasheetRow(3, "1", "", "ABC123", qty=50.0, price=1.0, postage=0.0)]
-    changes, _ = plan_stock_changes(rows, {"ABC123": 50})
-    assert changes == []
+    plan = plan_stock_changes(rows, {"ABC123": 50})
+    assert plan.changes == []
 
 
 def test_rows_from_matrix_handles_text_numbers_and_blanks() -> None:
@@ -219,3 +222,82 @@ def test_write_scope_allows_only_qty_and_price() -> None:
 
     with pytest.raises(ValueError, match="超出白名单"):
         validate_write_scope(ok, uploaded_columns={"D"})
+
+# --------------------------------------------------------------------------
+# 实际 SKU：KMP 最长匹配
+# --------------------------------------------------------------------------
+def test_kmp_finds_all_occurrences_including_overlaps() -> None:
+    assert kmp_search("ABABABA", "ABA") == [0, 2, 4]
+    assert kmp_search("P10ZMHB0004US", "ZMHB0004US") == [3]
+    assert kmp_search("nothing here", "ZMHB0004US") == []
+    assert kmp_search("abc", "") == []
+
+
+def test_longest_match_prefers_the_longest_catalog_code() -> None:
+    catalog = ["PCPB0028", "PCPB0028US", "P10PCPB0028US"]
+    match = longest_match("PCPB0028US x2", catalog)
+
+    assert match is not None
+    assert match.sku == "PCPB0028US"      # 10 个字符胜过 PCPB0028 的 8 个
+    assert match.matched_length == 10
+    assert match.position == 0
+    assert match.suffix == " x2"
+    assert match.prefix == ""
+
+
+def test_longest_match_reads_a_pack_prefix() -> None:
+    match = longest_match("P10ZMHB0004US", ["ZMHB0004US", "ZMHB0004"])
+    assert match is not None
+    assert match.sku == "ZMHB0004US"
+    assert match.position == 3
+    assert match.prefix == "P10"
+    assert match.residue == "P10"
+
+
+def test_longest_match_is_case_insensitive_but_returns_catalog_spelling() -> None:
+    match = longest_match("pcpb0028us x4", ["PCPB0028US"])
+    assert match is not None
+    assert match.sku == "PCPB0028US"
+    assert match.suffix == " x4"
+
+
+def test_longest_match_returns_none_without_a_candidate() -> None:
+    assert longest_match("ZZZZ9999", ["ABC123"]) is None
+
+
+@pytest.mark.parametrize(
+    ("residue", "expected"),
+    [("", 1), (" x2", 2), ("x12", 12), (" P10", 10), ("p3", 3), ("-LT-G", None), ("x", None)],
+)
+def test_parse_quantity_marker(residue: str, expected: int | None) -> None:
+    assert parse_quantity_marker(residue) == expected
+
+
+def test_stock_uses_longest_match_and_pack_prefix() -> None:
+    rows = [
+        DatasheetRow(3, "1", "", "ZMHB0004US", qty=50.0, price=1.0, postage=0.0),
+        DatasheetRow(4, "1", "", "ZMHB0004US x2", qty=999.0, price=1.0, postage=0.0),
+        DatasheetRow(5, "1", "", "P10ZMHB0004US", qty=50.0, price=1.0, postage=0.0),
+    ]
+    catalog = ["ZMHB0004US", "ZMHB0004"]
+    plan = plan_stock_changes(rows, {"ZMHB0004US": 101}, catalog=catalog)
+
+    assert [(c.row, c.new) for c in plan.changes] == [(3, 101.0), (4, 50.0), (5, 10.0)]
+    assert [c.reason for c in plan.changes][1:] == [
+        "实际 SKU ZMHB0004US 库存 101 ÷ 打包数 2",
+        "实际 SKU ZMHB0004US 库存 101 ÷ 打包数 10",
+    ]
+    assert plan.unresolved == []
+
+
+def test_stock_reports_unknown_leftovers_instead_of_guessing() -> None:
+    rows = [
+        DatasheetRow(3, "1", "", "ZMHB0004US-LT-G", qty=50.0, price=1.0, postage=0.0),
+        DatasheetRow(4, "1", "", "QQQQ7777", qty=50.0, price=1.0, postage=0.0),
+    ]
+    plan = plan_stock_changes(rows, {"ZMHB0004US": 101}, catalog=["ZMHB0004US"])
+
+    assert plan.changes == []
+    assert [item["sku"] for item in plan.unresolved] == ["ZMHB0004US-LT-G", "QQQQ7777"]
+    assert "认不出打包数" in plan.unresolved[0]["reason"]
+    assert "找不到任何匹配" in plan.unresolved[1]["reason"]
