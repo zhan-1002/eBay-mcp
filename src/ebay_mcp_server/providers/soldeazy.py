@@ -118,6 +118,9 @@ SELECTORS: dict[str, Locator] = {
     "export_options": Locator("Bulk Export Options", "//select", "#divBulkExportDialog select"),
     "export_profile": Locator("Add / edit an Export Profile", "//select", "#divBulkExportDialog select"),
     "export_confirm": Locator("Bulk Export Options_export", "//button"),
+    "export_dialog": Locator("批量导出弹层", '//div[@id="jqizoo"]', "#jqizoo"),
+    "export_profile_select": Locator("导出档案下拉", "//select[@name='listExppf']", "select[name=listExppf]"),
+    "export_format_select": Locator("导出格式下拉", "//select[@name='listExpfmt']", "select[name=listExpfmt]"),
     "bulk_sync_button": Locator("Bulk SYNC", '//form//table//tr/td/input[@type="button"][@id="btn_bulkdalign"]', "#btn_bulkdalign"),
     "sync_dialog": Locator("同步弹框", '//div[@id="jqizoo"]', "#jqizoo"),
     "sync_price_postage": Locator("Price Postage", "//input"),
@@ -335,15 +338,35 @@ class SoldeazyBrowser:
 
     # ---------- 导出 / 上传 / 同步（需真机验证） ----------
     async def export(self, dest: Path) -> dict[str, Any]:
+        """导出当前搜索结果（导出档案 quanty &price&postage，xlsx）。
+
+        实测：点「导出 Excel」后表单 POST 到新标签页直接下载；导出档案为空时
+        页面 JS 会直接 return false，所以档案必须显式指定。
+        """
+
         page = await self._ensure_page()
+        profile = (self.settings.soldeazy_export_profile or "55").strip()
+
         await (await self._locate("export_button")).click()
-        await (await self._locate("sync_dialog")).wait_for(state="visible")
-        async with page.expect_download() as download_info:
-            await page.get_by_role("button", name="导出 Excel").click()
-        download = await download_info.value
+        dialog = await self._locate("export_dialog")
+        await dialog.wait_for(state="visible")
+
+        await (await self._locate("export_profile_select")).select_option(profile)
+        await (await self._locate("export_format_select")).select_option("xlsx")
+
+        async with page.context.expect_event("download") as info:
+            await dialog.get_by_text("导出 Excel", exact=True).first.click()
+        download = await info.value
+
         dest.parent.mkdir(parents=True, exist_ok=True)
         await download.save_as(str(dest))
-        return {"success": True, "path": str(dest)}
+        return {
+            "success": True,
+            "path": str(dest),
+            "profile": profile,
+            "source_name": download.suggested_filename,
+            "url": download.url,
+        }
 
     async def upload(self, path: Path) -> dict[str, Any]:
         page = await self._ensure_page()

@@ -76,12 +76,34 @@ ROW_MULTI = [
 ROW_EXPAND = ["", "Portable Power Bank 7USB"]
 
 
-def test_all_25_yingdao_selectors_are_mapped() -> None:
-    assert len(SELECTORS) == 25
+# 影刀工程里那 25 个选择器，必须一个不少地映射到 provider
+YINGDAO_SELECTOR_NAMES = (
+    "输入框_login_user", "密码框", "Login", "soldeazy-广告弹框",
+    "弹框-(不再显示此消息)", "弹框-关闭",
+    "SKU输入框", "Channel Site", "Listing Format", "Status", "Date Modified",
+    "Search", "搜索结果table", "Scope", "Export", "Bulk Export Options",
+    "Add / edit an Export Profile", "Bulk Export Options_export", "Bulk SYNC",
+    "同步弹框", "Price Postage", "SYNC UP", "New D-Align bul...",
+    "选择文件_filePackage", "Upload Completed",
+)
+
+
+def test_all_yingdao_selectors_are_mapped() -> None:
+    names = {entry.name for entry in SELECTORS.values()}
+    missing = [name for name in YINGDAO_SELECTOR_NAMES if name not in names]
+    assert not missing, missing
+
     for key, entry in SELECTORS.items():
         assert isinstance(entry, Locator), key
         assert entry.name and entry.xpath.startswith("//"), key
         assert entry.candidates()
+
+
+def test_export_selectors_cover_the_real_export_dialog() -> None:
+    # 实测：导出档案为空时页面 JS 直接 return false，所以必须能选到这两个下拉
+    assert SELECTORS["export_dialog"].css == "#jqizoo"
+    assert "listExppf" in SELECTORS["export_profile_select"].css
+    assert "listExpfmt" in SELECTORS["export_format_select"].css
 
 
 def test_site_labels_match_the_real_dropdown() -> None:
