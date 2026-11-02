@@ -1,4 +1,4 @@
-﻿"""Soldeazy datasheet pricing and stock rules (pure functions, no I/O).
+"""Soldeazy datasheet pricing and stock rules (pure functions, no I/O).
 
 These rules were reverse-engineered from the production workflow
 ``soldeazy_2_dsheet_price.py`` plus the operator's own correction sheet, and are
@@ -569,9 +569,30 @@ def plan_price_changes(
                 continue
             pack = ladder.factors.get(row.row, 1)
             if len(ladder.factors) == 1:
-                notes.append(
-                    f"第 {row.row} 行 {row.sku} 独自成组，按单件（1 件）处理"
-                )
+                # 孤身行没有阶梯可比：最低售价 < 现价 说明它是套装，
+                # 件数 = 现价 ÷ 最低售价；最低售价 ≥ 现价 则是单件。
+                base_target = float(targets[key])
+                if row.price > base_target:
+                    ratio = row.price / base_target
+                    inferred = max(1, round(ratio))
+                    error = abs(ratio - inferred) / inferred
+                    if error > tolerance:
+                        notes.append(
+                            f"第 {row.row} 行 {row.sku} 独自成组，现价 {row.price:g} 是"
+                            f"最低售价 {base_target:g} 的 {ratio:.2f} 倍，离整数 {inferred} 已"
+                            f" {error:.0%}，未改价"
+                        )
+                        continue
+                    pack = inferred
+                    notes.append(
+                        f"第 {row.row} 行 {row.sku} 独自成组，现价高于最低售价，"
+                        f"按 {pack} 件装处理"
+                    )
+                else:
+                    pack = 1
+                    notes.append(
+                        f"第 {row.row} 行 {row.sku} 独自成组且现价不高于最低售价，按单件处理"
+                    )
         else:
             pack = sku_pack
 
