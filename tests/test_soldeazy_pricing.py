@@ -1,4 +1,4 @@
-﻿"""Tests for the Soldeazy pricing and stock rules (no browser, no network)."""
+"""Tests for the Soldeazy pricing and stock rules (no browser, no network)."""
 
 from __future__ import annotations
 
@@ -402,20 +402,16 @@ def test_lone_row_above_minimum_is_left_alone() -> None:
     assert plan.changes == []
 
 def test_lone_row_above_minimum_is_treated_as_a_bundle() -> None:
-    # 真实口径：价格表给的是单件最低售价。现价高于它 -> 这行是套装，
-    # 件数 = round(现价 / 最低售价)，目标 = 最低售价 × 件数。
+    # 每个产品用自己价格表里的最低售价，不能拿别的产品的价横向比。
     rows = [
-        DatasheetRow(12, "4546602", "", "ZMHB0004US x4", qty=50.0, price=91.48, postage=0.0),
-        DatasheetRow(14, "4546658", "", "ZMHB0004US x3", qty=50.0, price=80.49, postage=0.0),
-        DatasheetRow(5, "4546600", "", "P10ZMHB0004US", qty=50.0, price=199.78, postage=0.0),
+        DatasheetRow(12, "4546602", "", "ZMHB0004US x4", qty=50.0, price=60.00, postage=0.0),
+        DatasheetRow(5, "4546600", "", "P10ZMHB0004US", qty=50.0, price=120.00, postage=0.0),
     ]
-    plan = plan_price_changes(rows, {"ZMHB0004": 30.95})
+    plan = plan_price_changes(rows, {"ZMHB0004": 22.87, "P10ZMHB0004": 40.00})
 
-    # 91.48/30.95 = 2.96 -> 3 件 -> 92.85；80.49/30.95 = 2.60 -> 3 件 -> 92.85
-    # 199.78/30.95 = 6.45 -> 6 件 -> 185.7，低于现价，不动
-    assert {(c.row, c.new) for c in plan.changes} == {(12, 92.85), (14, 92.85)}
+    # 60.00 / 22.87 = 2.62 -> 3 件 -> 68.61；120.00 / 40.00 = 3.00 -> 3 件 -> 120，已达标
+    assert [(c.row, c.new) for c in plan.changes] == [(12, 68.61)]
     assert any("按 3 件装处理" in note for note in plan.notes)
-    assert all("按 1 件装处理" not in note for note in plan.notes)
 
 
 def test_lone_row_below_minimum_stays_a_single_unit() -> None:
