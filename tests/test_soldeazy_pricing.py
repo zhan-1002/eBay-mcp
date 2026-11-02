@@ -360,3 +360,22 @@ def test_stock_reports_unknown_leftovers_instead_of_guessing() -> None:
     assert [item["sku"] for item in plan.unresolved] == ["ZMHB0004US-LT-G", "QQQQ7777"]
     assert "认不出打包数" in plan.unresolved[0]["reason"]
     assert "找不到任何匹配" in plan.unresolved[1]["reason"]
+
+def test_groups_follow_row_id_even_for_adjacent_rows_with_different_ids() -> None:
+    # 第 20/21 行紧挨着，但各有 Row ID -> 两组，不能因为 SKU 相同就合并
+    rows = [
+        DatasheetRow(19, "4558719", "", "PCPB0028US", qty=200.0, price=18.65, postage=0.0),
+        DatasheetRow(20, "4558721", "", "PCPB0028US", qty=200.0, price=29.65, postage=0.0),
+        DatasheetRow(21, "", "", "PCPB0028US x2", qty=50.0, price=57.80, postage=None),
+        DatasheetRow(22, "4558800", "", "PCPB0028US", qty=50.0, price=19.90, postage=0.0),
+    ]
+    from ebay_mcp_server.providers.soldeazy_pricing import group_rows
+
+    groups = [group for group, _row in group_rows(rows)]
+    assert groups == ["4558719", "4558721", "4558721", "4558800"]
+
+    ladders = infer_pack_factors(rows)
+    assert set(ladders) == {"4558719", "4558721", "4558800"}
+    # 每组各自算基价：只有 4558721 那一组有两行，倍数才有意义
+    assert ladders["4558721"].factors == {20: 1, 21: 2}
+    assert ladders["4558719"].factors == {19: 1}
