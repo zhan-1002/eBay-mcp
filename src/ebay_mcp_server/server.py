@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import tempfile
 from collections.abc import Awaitable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -25,10 +27,12 @@ from ebay_mcp_server.providers import build_sales_provider
 from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
 from ebay_mcp_server.providers.soldeazy_pricing import (
     DatasheetRow,
-    PackPolicy,
     load_targets,
     plan_price_changes,
+    plan_stock_changes,
+    rows_from_matrix,
 )
+from ebay_mcp_server.providers.soldeazy_write import WriteRegistry, check_drift, rows_to_state
 from ebay_mcp_server.skill_registry import SkillRegistry
 from ebay_mcp_server.title_validation import validate_titles
 
@@ -44,6 +48,7 @@ gateway = EbayGateway(settings)
 official = OfficialEbayClient(gateway)
 sales_provider = build_sales_provider(settings)
 soldeazy = SoldeazyBrowser(settings)
+write_registry = WriteRegistry()
 skill_registry = SkillRegistry()
 
 
@@ -74,6 +79,12 @@ READ_ONLY_NETWORK = ToolAnnotations(
 LOCAL_SESSION_ACTION = ToolAnnotations(
     readOnlyHint=False,
     destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+REMOTE_WRITE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
     idempotentHint=False,
     openWorldHint=True,
 )
@@ -561,18 +572,49 @@ async def soldeazy_search_datasheet(
         )
 
 
+async def _collect_site_rows(
+    site: str, query: str
+) -> tuple[dict[str, Any], list[Any], Path]:
+    """搜索 → 导出 → 读成数据表行。
+
+    行号取自导出文件本身，写回时可以直接按行号定位（与影刀同一份载体）。
+    """
+
+    from ebay_mcp_server.providers.soldeazy_workbook import read_matrix
+
+    found = await soldeazy.search(query, site)
+    workdir = Path(tempfile.mkdtemp(prefix="soldeazy-"))
+    exported = workdir / f"export_{site}.xlsx"
+    await soldeazy.export(exported)
+    _sheet, matrix = read_matrix(exported)
+    body = [
+        [row[i] if i < len(row) else None for i in (0, 2, 3, 4, 5, 6)]
+        for row in matrix[2:]
+    ]
+    return found, rows_from_matrix(body, first_row=3), exported
+
+
+def _manifest_path() -> str:
+    configured = (settings.soldeazy_manifest_path or "").strip()
+    if configured:
+        return configured
+    base = Path(settings.soldeazy_profile_dir or ".").expanduser().parent
+    return str(base / "soldeazy-writes.jsonl")
+
+
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def soldeazy_preview_price_change(
     site: str,
     price_sheet: list[list[Any]],
-    pack_policy: str = "same",
+    pack_policy: str = "multiply",
 ) -> dict[str, Any]:
-    """Preview a price change without writing anything.
+    """Preview a price change and return a ``confirm_token``.
 
     ``price_sheet`` is the operator's ``(SKU, 价格更新)`` rows: the two-letter
     prefix selects the site, ``EF-``/``EF2-`` prefixes are stripped, and the
-    price is the *minimum selling price* (price + postage). Only rows whose
-    total is below the minimum are planned, and only the price column changes.
+    price is the *minimum selling price* (price + postage). The plan is computed
+    on the exported datasheet, so row numbers match the file that would be
+    uploaded. Nothing is written; the token is required by the update tool.
     """
     if pack_policy not in {"same", "skip", "multiply"}:
         return tool_error(
@@ -589,24 +631,41 @@ async def soldeazy_preview_price_change(
                 details={"rejected": targets.rejected, "conflicts": targets.conflicts},
             )
         query = " ".join(f"*{key}" for key in sorted(site_targets))
-        found = await soldeazy.search(query, site)
-        plan = plan_price_changes(
-            _to_rows(found["rows"]), site_targets, pack_policy=pack_policy  # type: ignore[arg-type]
-        )
+        found, rows, exported = await _collect_site_rows(site, query)
+        plan = plan_price_changes(rows, site_targets, pack_policy=pack_policy)  # type: ignore[arg-type]
+
+        token = ""
+        if plan.changes:
+            token = write_registry.register(
+                "price",
+                site,
+                query,
+                [change.as_dict() for change in plan.changes],
+                rows_to_state(found["rows"]),
+                context={"targets": site_targets, "pack_policy": pack_policy},
+            ).token
+
         return success(
             "soldeazy_preview_price_change",
             "soldeazy",
             {
                 "site": site,
                 "search": query,
-                "datasheet_rows": found["row_count"],
+                "datasheet_rows": len(rows),
+                "exported": str(exported),
                 "plan": plan.as_dict(),
+                "confirm_token": token,
                 "rejected_targets": targets.rejected,
                 "target_conflicts": targets.conflicts,
             },
         )
     except EbayMcpError as exc:
         return tool_error("soldeazy_preview_price_change", exc)
+    except RuntimeError as exc:
+        return tool_error(
+            "soldeazy_preview_price_change",
+            EbayMcpError("SOLDEAZY_DEPENDENCY_MISSING", str(exc)),
+        )
     except Exception as exc:  # pragma: no cover - browser safety boundary
         logger.exception("Unhandled Soldeazy preview error")
         return tool_error(
@@ -619,9 +678,9 @@ async def soldeazy_preview_price_change(
 async def soldeazy_preview_stock_change(site: str, stock_sheet_path: str) -> dict[str, Any]:
     """Preview a stock change from the operator's hand-filled sheet.
 
-    Reads ``库存更新.xlsx`` (SKU | 库存 | 备注), searches the site for those
-    SKUs, and plans an absolute quantity write per datasheet row. The quantity
-    is written as-is: no pack conversion, and the match residue is ignored.
+    Reads ``库存更新.xlsx`` (SKU | 库存 | 备注), exports the site datasheet, and
+    plans an absolute quantity write per row. The quantity is written as-is: no
+    pack conversion, and the match residue is ignored.
     """
     try:
         from ebay_mcp_server.providers.soldeazy_stock import read_stock_sheet
@@ -638,17 +697,31 @@ async def soldeazy_preview_stock_change(site: str, stock_sheet_path: str) -> dic
 
         catalog = sorted(sheet.entries)
         query = " ".join(f"*{sku}" for sku in catalog)
-        found = await soldeazy.search(query, site)
-        plan = plan_stock_changes(_to_rows(found["rows"]), sheet.entries, catalog=catalog)
+        found, rows, exported = await _collect_site_rows(site, query)
+        plan = plan_stock_changes(rows, sheet.entries, catalog=catalog)
+
+        token = ""
+        if plan.changes:
+            token = write_registry.register(
+                "stock",
+                site,
+                query,
+                [change.as_dict() for change in plan.changes],
+                rows_to_state(found["rows"]),
+                context={"stock": sheet.entries, "catalog": catalog},
+            ).token
+
         return success(
             "soldeazy_preview_stock_change",
             "soldeazy",
             {
                 "site": site,
                 "search": query,
-                "datasheet_rows": found["row_count"],
+                "datasheet_rows": len(rows),
+                "exported": str(exported),
                 "stock_rows": len(catalog),
                 "plan": plan.as_dict(),
+                "confirm_token": token,
                 "skipped_sheet_rows": sheet.skipped,
             },
         )
@@ -664,6 +737,147 @@ async def soldeazy_preview_stock_change(site: str, stock_sheet_path: str) -> dic
         return tool_error(
             "soldeazy_preview_stock_change",
             EbayMcpError("SOLDEAZY_STOCK_PREVIEW_ERROR", f"库存预览失败: {exc}"),
+        )
+
+
+async def _apply_write(kind: str, confirm_token: str, dry_run: bool) -> dict[str, Any]:
+    """预览令牌 → 现场复核 → 改文件 → 自检 → 上传 → 同步 → 记账。"""
+
+    from ebay_mcp_server.providers.soldeazy_workbook import build_upload_file
+    from ebay_mcp_server.providers.soldeazy_write import append_manifest, same_plan
+
+    if not settings.soldeazy_write_enabled:
+        raise EbayMcpError(
+            "SOLDEAZY_WRITE_DISABLED",
+            "写工具未开启：确认只读链路验证通过后设置 SOLDEAZY_WRITE_ENABLED=1。",
+        )
+
+    plan = write_registry.consume(confirm_token)
+    if plan is None:
+        raise EbayMcpError(
+            "SOLDEAZY_TOKEN_INVALID",
+            "确认令牌无效或已过期，请重新预览。",
+        )
+    if plan.kind != kind:
+        raise EbayMcpError(
+            "SOLDEAZY_TOKEN_KIND",
+            f"令牌是 {plan.kind} 预览发的，不能用来做 {kind}。",
+        )
+
+    found, rows, exported = await _collect_site_rows(plan.site, plan.query)
+
+    drift = check_drift(plan.expected, rows_to_state(found["rows"]))
+    if not drift.ok:
+        raise EbayMcpError(
+            "SOLDEAZY_DRIFT",
+            "线上数据与预览时不一致，已中止（未上传）",
+            details={"problems": drift.problems},
+        )
+
+    if kind == "price":
+        recomputed = plan_price_changes(
+            rows, plan.context["targets"], pack_policy=plan.context["pack_policy"]
+        )
+        field = "price"
+        sync_kwargs = {"price_postage": True}
+    else:
+        recomputed = plan_stock_changes(
+            rows, plan.context["stock"], catalog=plan.context.get("catalog")
+        )
+        field = "stock"
+        sync_kwargs = {"price_postage": False, "quantity": True}
+
+    reconciliation = same_plan(plan.changes, recomputed.changes)
+    if not reconciliation.ok:
+        raise EbayMcpError(
+            "SOLDEAZY_PLAN_CHANGED",
+            "重新算出来的改动与预览不一致，已中止（未上传）",
+            details={"problems": reconciliation.problems},
+        )
+    if not recomputed.changes:
+        raise EbayMcpError("SOLDEAZY_NOTHING_TO_DO", "重新核对后没有需要改的行。")
+
+    summary = {
+        "site": plan.site,
+        "search": plan.query,
+        "rows": len(recomputed.changes),
+        "changes": [change.as_dict() for change in recomputed.changes],
+        "exported": str(exported),
+    }
+    if dry_run:
+        return {**summary, "dry_run": True, "uploaded": False}
+
+    target = exported.with_name(f"{exported.stem}_done.xlsx")
+    report = build_upload_file(
+        exported, target, to_cell_changes(recomputed.changes, field)
+    )
+    await soldeazy.upload(target)
+    # 上传后重新搜索，让 BULK SYNC 作用在刚传上去的那批行上
+    await soldeazy.search(plan.query, plan.site)
+    sync = await soldeazy.sync_up(**sync_kwargs)
+
+    append_manifest(
+        _manifest_path(),
+        {
+            "token": plan.token,
+            "kind": kind,
+            "site": plan.site,
+            "search": plan.query,
+            "uploaded": report["path"],
+            "changed_columns": report["changed_columns"],
+            "changes": report["changes"],
+            "sync": sync,
+        },
+    )
+    return {
+        **summary,
+        "dry_run": False,
+        "uploaded": report["path"],
+        "changed_columns": report["changed_columns"],
+        "sync": sync,
+    }
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_update_price(confirm_token: str, dry_run: bool = True) -> dict[str, Any]:
+    """Apply a previewed price change to Soldeazy and sync it to eBay.
+
+    Requires the ``confirm_token`` from ``soldeazy_preview_price_change`` and a
+    server started with ``SOLDEAZY_WRITE_ENABLED=1``. ``dry_run`` defaults to
+    true: it re-checks the live rows and returns the plan without uploading.
+    """
+    try:
+        return success(
+            "soldeazy_update_price", "soldeazy", await _apply_write("price", confirm_token, dry_run)
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_update_price", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy price write error")
+        return tool_error(
+            "soldeazy_update_price",
+            EbayMcpError("SOLDEAZY_WRITE_ERROR", f"改价失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_update_stock(confirm_token: str, dry_run: bool = True) -> dict[str, Any]:
+    """Apply a previewed stock change to Soldeazy and sync the quantity to eBay.
+
+    Same guards as the price tool: write flag, one-shot token, live-row drift
+    check, E/F-only upload, and a manifest line per applied write.
+    """
+    try:
+        return success(
+            "soldeazy_update_stock", "soldeazy", await _apply_write("stock", confirm_token, dry_run)
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_update_stock", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy stock write error")
+        return tool_error(
+            "soldeazy_update_stock",
+            EbayMcpError("SOLDEAZY_WRITE_ERROR", f"改库存失败: {type(exc).__name__}"),
         )
 
 

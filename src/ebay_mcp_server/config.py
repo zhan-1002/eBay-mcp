@@ -78,6 +78,7 @@ class Settings:
     soldeazy_username: str = ""
     soldeazy_password: str = ""
     soldeazy_write_enabled: bool = False
+    soldeazy_manifest_path: str = ""
 
     @classmethod
     def load(cls) -> Settings:
@@ -148,6 +149,7 @@ class Settings:
             soldeazy_username=str(_env("SOLDEAZY_USERNAME", "")).strip(),
             soldeazy_password=str(_env("SOLDEAZY_PASSWORD", "")).strip(),
             soldeazy_write_enabled=_env_bool("SOLDEAZY_WRITE_ENABLED", False),
+            soldeazy_manifest_path=str(_env("SOLDEAZY_MANIFEST_PATH", "")).strip(),
         )
 
     @property

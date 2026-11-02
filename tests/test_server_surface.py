@@ -26,14 +26,13 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "soldeazy_preview_price_change",
         "soldeazy_stock_template",
         "soldeazy_preview_stock_change",
+        "soldeazy_update_price",
+        "soldeazy_update_stock",
     } <= tools
-    assert len(tools) == 20
+    assert len(tools) == 22
     assert not any("recall" in name or "selection" in name for name in tools)
-    # 写工具尚未注册：等只读链路在真机验证通过后再开
-    assert not any(
-        name in tools
-        for name in ("soldeazy_update_price", "soldeazy_update_stock", "soldeazy_apply_changes")
-    )
+    # 写工具已注册但默认关闭：没有 SOLDEAZY_WRITE_ENABLED 时一律拒绝
+    assert {"soldeazy_update_price", "soldeazy_update_stock"} <= tools
     assert len(server.mcp._resource_manager._resources) == 7
 
 
@@ -76,3 +75,31 @@ async def test_title_validator_tool_uses_local_contract():
     result = await server.ebay_validate_titles(titles)
     assert result["success"] is True
     assert result["data"]["valid_for_delivery"] is True
+
+@pytest.mark.asyncio
+async def test_write_tools_fail_closed_when_the_flag_is_off():
+    for tool in (server.soldeazy_update_price, server.soldeazy_update_stock):
+        result = await tool("any-token")
+        assert result["success"] is False
+        assert result["error"]["code"] == "SOLDEAZY_WRITE_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_write_tool_rejects_an_unknown_token_even_when_enabled(monkeypatch):
+    import dataclasses
+
+    monkeypatch.setattr(
+        server, "settings", dataclasses.replace(server.settings, soldeazy_write_enabled=True)
+    )
+    result = await server.soldeazy_update_price("not-a-real-token")
+    assert result["success"] is False
+    assert result["error"]["code"] == "SOLDEAZY_TOKEN_INVALID"
+
+
+def test_write_tool_defaults_to_dry_run():
+    import inspect
+
+    signature = inspect.signature(server.soldeazy_update_price)
+    assert signature.parameters["dry_run"].default is True
+    signature = inspect.signature(server.soldeazy_update_stock)
+    assert signature.parameters["dry_run"].default is True
