@@ -6,6 +6,7 @@ import pytest
 
 from ebay_mcp_server.providers.soldeazy_pricing import (
     Change,
+    infer_pack_factors,
     kmp_search,
     longest_match,
     parse_quantity_marker,
@@ -106,18 +107,75 @@ def test_total_equal_to_target_is_left_alone() -> None:
     assert plan_price_changes(rows, {"ABC123": 50.0}).changes == []
 
 
-def test_pack_policies() -> None:
+def test_pack_policies_from_sku_residue() -> None:
     rows = [_row(3, "ABC123 x3", 10.0, 2.0)]
 
-    skipped = plan_price_changes(rows, {"ABC123": 100.0}, pack_policy="skip")
+    skipped = plan_price_changes(rows, {"ABC123": 100.0}, pack_policy="skip", pack_source="sku")
     assert skipped.changes == []
     assert skipped.skipped_packs == ["ABC123 x3 (x3)"]
 
-    multiplied = plan_price_changes(rows, {"ABC123": 100.0}, pack_policy="multiply")
+    multiplied = plan_price_changes(
+        rows, {"ABC123": 100.0}, pack_policy="multiply", pack_source="sku"
+    )
     assert multiplied.changes[0].new == pytest.approx(298.0)  # 100*3 - 2
 
-    same = plan_price_changes(rows, {"ABC123": 100.0}, pack_policy="same")
+    same = plan_price_changes(rows, {"ABC123": 100.0}, pack_policy="same", pack_source="sku")
     assert same.changes[0].new == pytest.approx(98.0)
+
+
+# --------------------------------------------------------------------------
+# 单价/套装：按同组价格阶梯反推（2026-11-02 口径）
+# --------------------------------------------------------------------------
+def test_ladder_infers_factors_from_price_ratios() -> None:
+    rows = [
+        _row(3, "ABC1", 10.0, 0.0, rowid="G1"),
+        _row(4, "ABC1 x2", 19.5, None, rowid=""),
+        _row(5, "ABC1 x4", 38.0, None, rowid=""),
+        _row(6, "ABC1 x8", 76.0, None, rowid=""),
+    ]
+    ladders = infer_pack_factors(rows)
+    ladder = ladders["G1"]
+
+    assert ladder.base_row == 3
+    assert ladder.base_price == 10.0
+    assert ladder.factors == {3: 1, 4: 2, 5: 4, 6: 8}   # 19.5/10=1.95→2，38/10=3.8→4，76/10=7.6→8
+    assert ladder.uncertain == {}
+
+
+def test_ladder_flags_a_price_that_is_not_a_multiple() -> None:
+    rows = [
+        _row(3, "ABC1", 10.0, 0.0, rowid="G1"),
+        _row(4, "ABC1 x2", 25.0, None, rowid=""),   # 2.5 倍，离 2 和 3 都远
+    ]
+    ladder = infer_pack_factors(rows)["G1"]
+
+    assert ladder.factors == {3: 1}
+    assert 4 in ladder.uncertain
+    assert "偏离整数" in ladder.uncertain[4]
+
+
+def test_ratio_mode_uses_the_ladder_and_reports_single_row_groups() -> None:
+    rows = [
+        _row(3, "ABC1", 10.0, 0.0, rowid="G1"),
+        _row(4, "ABC1 x2", 19.5, None, rowid=""),
+        _row(5, "XYZ9", 5.0, 0.0, rowid="G2"),   # 独自成组
+    ]
+    plan = plan_price_changes(rows, {"ABC1": 100.0, "XYZ9": 50.0})
+
+    assert {(c.row, c.new) for c in plan.changes} == {(3, 100.0), (4, 200.0), (5, 50.0)}
+    assert any("独自成组" in note for note in plan.notes)
+    assert plan.ladders["G1"].factors == {3: 1, 4: 2}
+
+
+def test_ratio_mode_skips_a_row_whose_multiple_is_uncertain() -> None:
+    rows = [
+        _row(3, "ABC1", 10.0, 0.0, rowid="G1"),
+        _row(4, "ABC1 x2", 25.0, None, rowid=""),
+    ]
+    plan = plan_price_changes(rows, {"ABC1": 100.0})
+
+    assert [c.row for c in plan.changes] == [3]
+    assert any("偏离整数" in note for note in plan.notes)
 
 
 def test_unmatched_targets_are_reported() -> None:

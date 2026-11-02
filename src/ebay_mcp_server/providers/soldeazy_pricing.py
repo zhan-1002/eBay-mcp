@@ -1,4 +1,4 @@
-"""Soldeazy datasheet pricing and stock rules (pure functions, no I/O).
+﻿"""Soldeazy datasheet pricing and stock rules (pure functions, no I/O).
 
 These rules were reverse-engineered from the production workflow
 ``soldeazy_2_dsheet_price.py`` plus the operator's own correction sheet, and are
@@ -17,10 +17,11 @@ validated against a real ``export_dsheet`` file:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, Literal, Mapping, Sequence
 
 PackPolicy = Literal["same", "skip", "multiply"]
+PackSource = Literal["ratio", "sku"]
 
 #: Datasheet columns the operator is allowed to touch, by change field.
 EDITABLE_COLUMNS: dict[str, str] = {"qty": "E", "price": "F"}
@@ -90,6 +91,8 @@ class PricePlan:
     skipped_packs: list[str]
     ambiguous_groups: list[str]
     matched_rows: int
+    notes: list[str] = field(default_factory=list)
+    ladders: dict[str, GroupLadder] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -99,6 +102,8 @@ class PricePlan:
             "unmatched_targets": self.unmatched_targets,
             "skipped_packs": self.skipped_packs,
             "ambiguous_groups": self.ambiguous_groups,
+            "notes": self.notes,
+            "ladders": [ladder.as_dict() for ladder in self.ladders.values()],
         }
 
 
@@ -446,33 +451,129 @@ def validate_write_scope(changes: Iterable[Change], *, uploaded_columns: Iterabl
         raise ValueError(f"上传文件变化列超出白名单 {sorted(allowed)}：{extra}")
 
 
+@dataclass(frozen=True)
+class GroupLadder:
+    """同一数据表内的价格阶梯，用来反推「这一行相当于几件」。"""
+
+    group: str
+    base_row: int
+    base_price: float
+    ratios: dict[int, float]
+    factors: dict[int, int]
+    uncertain: dict[int, str]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "group": self.group,
+            "base_row": self.base_row,
+            "base_price": self.base_price,
+            "ratios": {str(k): round(v, 3) for k, v in self.ratios.items()},
+            "factors": {str(k): v for k, v in self.factors.items()},
+            "uncertain": {str(k): v for k, v in self.uncertain.items()},
+        }
+
+
+def infer_pack_factors(
+    rows: Sequence[DatasheetRow], *, tolerance: float = 0.15
+) -> dict[str, GroupLadder]:
+    """按同组内价格的倍数关系反推每行相当于「几件」。
+
+    不再看 SKU 里的 `` x2`` / ``P10``：同一数据表的价格天然成倍数关系，
+    取组内最低价作基数，其余行按 ``价格 / 基数`` 就近取整，偏离超过
+    ``tolerance`` 的行标为不确定（宁可不改，也不按猜的倍数抬价）。
+    """
+
+    ladders: dict[str, GroupLadder] = {}
+    buckets: dict[str, list[DatasheetRow]] = {}
+    for group, row in group_rows(rows):
+        buckets.setdefault(group, []).append(row)
+
+    for group, members in buckets.items():
+        priced = [row for row in members if row.price > 0]
+        if not priced:
+            ladders[group] = GroupLadder(group, 0, 0.0, {}, {}, {})
+            continue
+        base = min(priced, key=lambda row: row.price)
+        ratios: dict[int, float] = {}
+        factors: dict[int, int] = {}
+        uncertain: dict[int, str] = {}
+        for row in priced:
+            ratio = row.price / base.price
+            nearest = max(1, round(ratio))
+            error = abs(ratio - nearest) / nearest
+            ratios[row.row] = ratio
+            if error > tolerance:
+                uncertain[row.row] = (
+                    f"价格 {row.price:g} 是基价 {base.price:g} 的 {ratio:.2f} 倍，"
+                    f"偏离整数 {nearest} 已 {error:.0%}"
+                )
+            else:
+                factors[row.row] = nearest
+        ladders[group] = GroupLadder(
+            group=group,
+            base_row=base.row,
+            base_price=base.price,
+            ratios=ratios,
+            factors=factors,
+            uncertain=uncertain,
+        )
+    return ladders
+
+
 def plan_price_changes(
     rows: Sequence[DatasheetRow],
     targets: Mapping[str, float],
     *,
     pack_policy: PackPolicy = "multiply",
+    pack_source: PackSource = "ratio",
+    tolerance: float = 0.15,
 ) -> PricePlan:
     """Plan price writes so every row reaches its minimum selling price.
 
-    ``pack_policy``:
+    ``pack_source`` 决定「这一行相当于几件」从哪来：
 
-    * ``multiply`` - 打包行目标 = 最低售价 × 打包数（选定方案 B，默认）
-    * ``same``     - 打包行与单件同价（旧生产口径）
-    * ``skip``     - 打包行不动
+    * ``ratio`` - 同组价格阶梯反推（默认，2026-11-02 确认的口径）
+    * ``sku``   - 从最长匹配的残留（`` x2`` / ``P10``）读
+
+    ``pack_policy`` 决定这个件数怎么用：``multiply`` 目标 = 最低售价 × 件数，
+    ``same`` 一律按单件，``skip`` 打包行不动。
     """
 
     postage = resolve_postage(rows)
+    ladders = infer_pack_factors(rows, tolerance=tolerance) if pack_source == "ratio" else {}
+    groups = {row.row: group for group, row in group_rows(rows)}
+
     changes: list[Change] = []
     matched = 0
     skipped: list[str] = []
+    notes: list[str] = []
     hit: set[str] = set()
 
     for row in rows:
         match = match_target(row.sku, targets)
         if match is None:
             continue
-        key, pack, _site = match
+        key, sku_pack, _site = match
         hit.add(key)
+        group = groups.get(row.row, "")
+
+        if pack_source == "ratio":
+            ladder = ladders.get(group)
+            if ladder is None or row.row in ladder.uncertain:
+                reason = (
+                    ladder.uncertain.get(row.row)
+                    if ladder is not None
+                    else "没有可用的价格阶梯"
+                )
+                notes.append(f"第 {row.row} 行 {row.sku}：{reason}，未改价")
+                continue
+            pack = ladder.factors.get(row.row, 1)
+            if len(ladder.factors) == 1:
+                notes.append(
+                    f"第 {row.row} 行 {row.sku} 独自成组，按单件（1 件）处理"
+                )
+        else:
+            pack = sku_pack
 
         if pack > 1 and pack_policy == "skip":
             skipped.append(f"{row.sku} (x{pack})")
@@ -511,6 +612,8 @@ def plan_price_changes(
         skipped_packs=skipped,
         ambiguous_groups=ambiguous_groups,
         matched_rows=matched,
+        notes=notes,
+        ladders=ladders,
     )
 
 
