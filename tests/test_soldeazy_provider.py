@@ -1,22 +1,79 @@
-"""Tests for the Soldeazy browser provider's pure parts (no browser needed)."""
+"""Soldeazy 浏览器 provider 的纯解析测试（不启动浏览器）。"""
 
 from __future__ import annotations
 
 import pytest
 
-from ebay_mcp_server.errors import EbayMcpError
 from ebay_mcp_server.providers.soldeazy import (
     COLUMN_ALIASES,
     SELECTORS,
+    SITE_CODES,
+    SITE_LABELS,
     Locator,
-    parse_table,
+    parse_rows,
     resolve_columns,
 )
 
-# 生产列表页的真实表头（archive/02_soldeazy详情补数/文档/接口探查记录_20260914.md）
-REAL_HEADER = (
-    "序号\t数据表编号\t功能选项\t状态\t渠道帐号\t站点\t标题\t图\tSKU\t价格\t运费(当地)\t促销刊登\teBay促销"
-)
+# 真机表头（2026-11-02，14 个 th，首列是勾选框）
+REAL_HEADER = [
+    "",
+    "序号",
+    "数据表 编号",
+    "功能选项",
+    "状态",
+    "渠道 帐号",
+    "站点",
+    "标题",
+    "",
+    "SKU",
+    "价格",
+    "运费 (当地)",
+    "促销 刊登",
+    "eBay促销",
+]
+
+# 真机数据行（16 个 td：多出勾选框 + 一个重复标题格）
+ROW_SINGLE = [
+    "",
+    "1",
+    "4567313",
+    "edit delete previewSYOSUERV",
+    "",
+    "EBAY TUD",
+    "US",
+    "Portable Power Bank 7USB",
+    "",
+    "Portable Power Bank 7USB",
+    "",
+    "PCPB0028US",
+    "20.99",
+    "0",
+    "-",
+    "-",
+]
+
+# 多属性行：SKU / 价格单元格里多行挤在一起
+ROW_MULTI = [
+    "",
+    "2",
+    "4567312",
+    "edit delete previewSYOSUERV",
+    "",
+    "EBAY TUD",
+    "US",
+    "Mini Portable Charger",
+    "",
+    "Mini Portable Charger",
+    "16",
+    "PCPB0028US\nPCPB0028US -1\nPCPB0028US -2",
+    "20.99\n20.99\n21.99",
+    "0",
+    "-",
+    "-",
+]
+
+# 变体展开行：只有 2 个单元格
+ROW_EXPAND = ["", "Portable Power Bank 7USB"]
 
 
 def test_all_25_yingdao_selectors_are_mapped() -> None:
@@ -27,14 +84,22 @@ def test_all_25_yingdao_selectors_are_mapped() -> None:
         assert entry.candidates()
 
 
-def test_resolve_columns_reads_the_real_header() -> None:
-    mapping = resolve_columns(REAL_HEADER.split("\t"))
-    assert mapping["rowid"] == 1
-    assert mapping["sku"] == 8
-    assert mapping["price"] == 9
-    assert mapping["postage"] == 10
-    assert mapping["shop"] == 4
-    assert mapping["site"] == 5
+def test_site_labels_match_the_real_dropdown() -> None:
+    # 实测：DE 在下拉里叫 Germany，值 77；US 的值是 0，UK 是 3
+    assert SITE_LABELS["DE"] == "Germany"
+    assert SITE_LABELS["US"] == "US"
+    assert SITE_CODES["DE"] == "77"
+    assert SITE_CODES["US"] == "0"
+    assert SITE_CODES["UK"] == "3"
+
+
+def test_resolve_columns_ignores_header_line_breaks() -> None:
+    mapping = resolve_columns(REAL_HEADER)
+    assert mapping["rowid"] == 2
+    assert mapping["site"] == 6
+    assert mapping["sku"] == 9
+    assert mapping["price"] == 10
+    assert mapping["postage"] == 11
 
 
 def test_every_column_has_aliases() -> None:
@@ -43,33 +108,40 @@ def test_every_column_has_aliases() -> None:
         assert all(isinstance(alias, str) and alias for alias in aliases), field
 
 
-def test_parse_table_returns_typed_records() -> None:
-    data = (
-        "1\t4551545\t...\tListed\tEB\tUK\ttitle\timg\tZMHB0004US\t28.48\t£5.00\t\t\n"
-        "2\t4551546\t...\tListed\tEB\tUK\ttitle\timg\tZMHB0004US x2\t57.80\t-\t\t"
-    )
-    header, records = parse_table([REAL_HEADER, data.splitlines()[0], data.splitlines()[1]])
+def test_parse_rows_uses_the_measured_cell_positions() -> None:
+    header, records = parse_rows([REAL_HEADER, ROW_SINGLE])
 
-    assert header[8] == "SKU"
-    assert [r["sku"] for r in records] == ["ZMHB0004US", "ZMHB0004US x2"]
-    assert records[0]["price"] == pytest.approx(28.48)
-    assert records[0]["postage"] == pytest.approx(5.0)
-    assert records[1]["postage"] is None
-    assert records[0]["rowid"] == "4551545"
-
-
-def test_parse_table_handles_thousands_separator_and_currency() -> None:
-    row = "1\t9\t..\tListed\tEB\tDE\tt\timg\tABC1\t1,234.50\t€12.90\t\t"
-    _, records = parse_table([REAL_HEADER, row])
-    assert records[0]["price"] == pytest.approx(1234.5)
-    assert records[0]["postage"] == pytest.approx(12.9)
+    assert header[1] == "序号"
+    assert len(records) == 1
+    record = records[0]
+    assert record["rowid"] == "4567313"
+    assert record["site"] == "US"
+    assert record["sku"] == "PCPB0028US"
+    assert record["price"] == pytest.approx(20.99)
+    assert record["postage"] == pytest.approx(0.0)
+    assert record["variants"] == 1
 
 
-def test_parse_table_rejects_an_unexpected_layout() -> None:
-    with pytest.raises(EbayMcpError, match="找不到 SKU 列"):
-        parse_table(["随便\t两列", "1\t2"])
+def test_parse_rows_marks_multi_variant_rows() -> None:
+    _, records = parse_rows([REAL_HEADER, ROW_MULTI])
+    record = records[0]
+
+    assert record["rowid"] == "4567312"
+    assert record["variants"] == 3
+    assert record["sku"] == "PCPB0028US"      # 取第一行作代表
+    assert record["price"] == pytest.approx(20.99)
 
 
-def test_parse_table_skips_blank_and_skuless_rows() -> None:
-    _, records = parse_table([REAL_HEADER, "", "1\t4551545\t\t\tEB\tUK\tt\timg\t\t28.48\t0"])
+def test_parse_rows_skips_variant_expansion_rows() -> None:
+    _, records = parse_rows([REAL_HEADER, ROW_SINGLE, ROW_EXPAND])
+    assert [r["rowid"] for r in records] == ["4567313"]
+
+
+def test_parse_rows_tolerates_an_empty_page() -> None:
+    assert parse_rows([]) == ([], [])
+    assert parse_rows([["", "  "]]) == ([], [])
+
+
+def test_parse_rows_ignores_rows_without_a_datasheet_id() -> None:
+    _, records = parse_rows([REAL_HEADER, [""] + ["x"] * 15])
     assert records == []

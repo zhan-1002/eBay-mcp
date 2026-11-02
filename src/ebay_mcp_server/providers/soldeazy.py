@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -33,6 +34,41 @@ BASE_URL = "https://stiger.soldeazy.com"
 LIST_PATH = "/app/soldeazy/datasheet/dsheet_list?default_search_profile"
 LOGIN_PATH = "/app/soldeazy/login"
 UPLOAD_PATH = "/app/soldeazy/upload-datasheet"
+
+#: 站点下拉里显示的是英文站点名（实测 listsite），不是 US/DE 代码
+SITE_LABELS: dict[str, str] = {
+    "US": "US",
+    "UK": "UK",
+    "DE": "Germany",
+    "FR": "France",
+    "IT": "Italy",
+    "ES": "Spain",
+    "AU": "Australia",
+    "CA": "Canada",
+    "PL": "Poland",
+    "NL": "Netherlands",
+    "JP": "Japan",
+    "IE": "Ireland",
+    "SG": "Singapore",
+    "HK": "HongKong",
+    "MY": "Malaysia",
+}
+
+#: 站点下拉的 value（实测）
+SITE_CODES: dict[str, str] = {
+    "US": "0",
+    "UK": "3",
+    "DE": "77",
+    "FR": "71",
+    "IT": "101",
+    "ES": "186",
+    "AU": "15",
+    "CA": "2",
+    "PL": "212",
+    "NL": "146",
+    "JP": "903",
+    "IE": "205",
+}
 
 
 @dataclass(frozen=True)
@@ -261,8 +297,13 @@ class SoldeazyBrowser:
             await asyncio.sleep(self.settings.soldeazy_min_delay)
 
             table = await self._locate("result_table")
-            rows = await table.locator("tr").all_inner_texts()
-            header, records = parse_table(rows)
+            trs = table.locator("tr")
+            total = await trs.count()
+            cell_rows: list[list[str]] = []
+            for index in range(total):
+                cells = await trs.nth(index).locator("th,td").all_inner_texts()
+                cell_rows.append(cells)  # 原样交给 parse_rows：换行是变体分隔符
+            header, records = parse_rows(cell_rows)
             return {
                 "site": site,
                 "search": sku_terms,
@@ -272,11 +313,25 @@ class SoldeazyBrowser:
             }
 
     async def _select_site(self, site: str) -> None:
+        """站点下拉里用的是英文站点名（US/UK/Germany…），不是 US/DE 这种代码。"""
+
         locator = await self._locate("search_site")
+        code = (site or "").strip().upper()
+        label = SITE_LABELS.get(code, code)
+        for candidate in (label, code):
+            try:
+                await locator.select_option(label=candidate, timeout=5000)
+                return
+            except Exception:  # noqa: BLE001 - 依次试下一个写法
+                continue
         try:
-            await locator.select_option(label=site)
-        except Exception:
-            await locator.select_option(site)
+            await locator.select_option(str(SITE_CODES.get(code, "")), timeout=5000)
+            return
+        except Exception as exc:  # noqa: BLE001
+            raise EbayMcpError(
+                "SOLDEAZY_SITE_OPTION_MISSING",
+                f"站点下拉里找不到 {site}（试过 {label!r} / {code!r}）",
+            ) from exc
 
     # ---------- 导出 / 上传 / 同步（需真机验证） ----------
     async def export(self, dest: Path) -> dict[str, Any]:
@@ -318,13 +373,20 @@ class SoldeazyBrowser:
 
 # ---------- 纯解析（可单测） ----------
 def resolve_columns(header: Sequence[str]) -> dict[str, int]:
-    """Map logical field names to column indexes using the table header."""
+    """Map logical field names to column indexes using the table header.
 
-    normalized = [str(cell).strip() for cell in header]
+    真机表头会把文字折行（`数据表\n编号`），所以比对前先把空白全部去掉。
+    """
+
+    def squash(value: object) -> str:
+        return re.sub(r"\s+", "", str(value or ""))
+
+    normalized = [squash(cell) for cell in header]
     mapping: dict[str, int] = {}
     for field, aliases in COLUMN_ALIASES.items():
+        wanted = {squash(alias) for alias in aliases}
         for index, cell in enumerate(normalized):
-            if cell in aliases:
+            if cell in wanted:
                 mapping[field] = index
                 break
     return mapping
@@ -340,39 +402,55 @@ def _number(text: str) -> float | None:
         return None
 
 
-def parse_table(rows: Iterable[str]) -> tuple[list[str], list[dict[str, Any]]]:
-    """Turn ``#tbl_dSheet`` rows (inner text) into records.
+def parse_rows(rows: Sequence[Sequence[str]]) -> tuple[list[str], list[dict[str, Any]]]:
+    """把 `#tbl_dSheet` 的单元格矩阵解析成数据表记录。
 
-    The first row that yields a usable column map is treated as the header.
+    实测（2026-11-02 真机）：表头 14 个 `th`，数据行却是 16 个 `td`
+    （多出勾选框和一个重复标题格），所以**不能按表头下标取列**。这里用实测的
+    固定位置：2=数据表编号、6=站点、7=标题、11=SKU、12=价格、13=运费。
+
+    同一数据表下多个变体会挤在一个单元格里（换行分隔），这里取第一行作代表，
+    并用 `variants` 标出变体数；权威价格仍以导出文件为准。
     """
 
-    texts = [row for row in rows if str(row).strip()]
-    if not texts:
+    def tidy(value: object) -> str:
+        # 只压缩空格/制表符，保留换行——多属性行的变体是靠换行分隔的
+        return re.sub(r"[ \t]+", " ", str(value or "")).strip()
+
+    cleaned = [[tidy(cell) for cell in row] for row in rows]
+    cleaned = [row for row in cleaned if any(row)]
+    if not cleaned:
         return [], []
 
-    header_cells: list[str] = []
+    header = cleaned[0]
     records: list[dict[str, Any]] = []
-    for index, raw in enumerate(texts):
-        cells = [cell.strip() for cell in str(raw).split("\t")]
-        if index == 0:
-            header_cells = cells
-            columns = resolve_columns(cells)
-            if "sku" not in columns:
-                raise EbayMcpError(
-                    "SOLDEAZY_TABLE_UNEXPECTED",
-                    "搜索结果表里找不到 SKU 列，页面结构可能已改版。",
-                    details={"header": cells[:20]},
-                )
+
+    for cells in cleaned[1:]:
+        if len(cells) < 8:            # 变体展开行
             continue
-        if len(cells) < len(header_cells):
-            cells += [""] * (len(header_cells) - len(cells))
-        record: dict[str, Any] = {}
-        for field, col in columns.items():
-            value = cells[col] if col < len(cells) else ""
-            if field in {"price", "postage", "qty"}:
-                record[field] = _number(value)
-            else:
-                record[field] = value
-        if record.get("sku"):
-            records.append(record)
-    return header_cells, records
+        rowid = ""
+        for cell in cells[:6]:
+            if cell.isdigit() and len(cell) >= 6:
+                rowid = cell
+                break
+        if not rowid:
+            continue
+
+        def take(index: int) -> str:
+            return cells[index] if index < len(cells) else ""
+
+        sku_lines = [line.strip() for line in take(11).splitlines() if line.strip()]
+        price_lines = [line.strip() for line in take(12).splitlines() if line.strip()]
+        records.append(
+            {
+                "rowid": rowid,
+                "site": take(6),
+                "title": take(7)[:120],
+                "sku": sku_lines[0] if sku_lines else "",
+                "price": _number(price_lines[0]) if price_lines else None,
+                "postage": _number(take(13).splitlines()[0]) if take(13) else None,
+                "variants": len(sku_lines),
+            }
+        )
+
+    return header, records
