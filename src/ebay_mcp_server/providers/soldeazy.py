@@ -262,7 +262,19 @@ class SoldeazyBrowser:
     async def interactive_login(self) -> dict[str, Any]:
         page = await self._ensure_page()
         await page.goto(f"{self.base_url}{LOGIN_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(2)
         await self._dismiss_popup()
+
+        # profile 里已有会话时，站点直接跳过登录页——绝不再登一次
+        if "/login" not in (page.url or "").lower():
+            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await self._dismiss_popup()
+            return {
+                "success": True,
+                "reused_session": True,
+                "url": page.url,
+                "profile_dir": str(self.profile_dir),
+            }
 
         username = self.settings.soldeazy_username
         password = self.settings.soldeazy_password
@@ -292,7 +304,7 @@ class SoldeazyBrowser:
         )
 
     # ---------- 搜索 ----------
-    async def search(self, sku_terms: str, site: str) -> dict[str, Any]:
+    async def search(self, sku_terms: str, site: str, shop: str = "") -> dict[str, Any]:
         """Search one site by a space-joined SKU string and read the results."""
 
         async with self._lock:
@@ -303,6 +315,8 @@ class SoldeazyBrowser:
             await (await self._locate("search_sku")).fill(sku_terms)
             if site:
                 await self._select_site(site)
+            if shop:
+                await self._select_shop(shop)
             await self._select_scope_whole_result()
             await (await self._locate("search_button")).click()
             await page.wait_for_load_state("domcontentloaded")
@@ -318,6 +332,7 @@ class SoldeazyBrowser:
             header, records = parse_rows(cell_rows)
             return {
                 "site": site,
+                "shop": shop,
                 "search": sku_terms,
                 "columns": header,
                 "row_count": len(records),
@@ -356,6 +371,31 @@ class SoldeazyBrowser:
             except Exception:  # noqa: BLE001
                 continue
         return selected
+
+    async def _select_shop(self, shop: str) -> None:
+        """按渠道账号过滤。控件是 Chosen 多选，原生 select 被隐藏，
+        只能直接设 selected 再触发 change/chosen:updated。"""
+
+        page = await self._ensure_page()
+        picked = await page.evaluate("""
+        (shop) => {
+          const s = document.querySelector("select[name='listshop[]']");
+          if (!s) return null;
+          Array.from(s.options).forEach(o => { o.selected = false; });
+          const opt = Array.from(s.options).find(o => o.textContent.trim() === shop)
+                   || Array.from(s.options).find(o => o.textContent.includes(shop));
+          if (!opt) return null;
+          opt.selected = true;
+          s.dispatchEvent(new Event("change", {bubbles: true}));
+          if (window.jQuery) { try { jQuery(s).trigger("chosen:updated"); } catch (e) {} }
+          return {value: opt.value, text: opt.textContent.trim()};
+        }
+        """, shop)
+        if not picked:
+            raise EbayMcpError(
+                "SOLDEAZY_SHOP_NOT_FOUND",
+                f"渠道账号下拉里找不到 {shop}",
+            )
 
     async def _select_scope_whole_result(self) -> None:
         """导出范围要覆盖整个搜索结果，不能只导勾选行。
@@ -489,12 +529,13 @@ def _number(text: str) -> float | None:
 def parse_rows(rows: Sequence[Sequence[str]]) -> tuple[list[str], list[dict[str, Any]]]:
     """把 `#tbl_dSheet` 的单元格矩阵解析成数据表记录。
 
-    实测（2026-11-02 真机）：表头 14 个 `th`，数据行却是 16 个 `td`
-    （多出勾选框和一个重复标题格），所以**不能按表头下标取列**。这里用实测的
-    固定位置：2=数据表编号、6=站点、7=标题、11=SKU、12=价格、13=运费。
+    真机实测的坑（2026-11-02）：表头 14 个 `th`，数据行却是 15~16 个 `td`
+    （多出勾选框、重复标题格），**按表头下标取列会整体串位**；筛选前后列数还会变。
+    这里改用内容锚定：
 
-    同一数据表下多个变体会挤在一个单元格里（换行分隔），这里取第一行作代表，
-    并用 `variants` 标出变体数；权威价格仍以导出文件为准。
+    * 行尾 5 列固定为 `SKU / 价格 / 运费 / 促销刊登 / eBay促销`，用负下标取；
+    * 站点按内容识别（US / UK / Germany…），渠道账号取站点左边那一格；
+    * 数据表编号取前 6 格里第一个 6 位以上数字。
     """
 
     def tidy(value: object) -> str:
@@ -508,6 +549,7 @@ def parse_rows(rows: Sequence[Sequence[str]]) -> tuple[list[str], list[dict[str,
 
     header = cleaned[0]
     records: list[dict[str, Any]] = []
+    site_names = {name.upper() for name in SITE_LABELS.values()} | set(SITE_LABELS)
 
     for cells in cleaned[1:]:
         if len(cells) < 8:            # 变体展开行
@@ -520,20 +562,33 @@ def parse_rows(rows: Sequence[Sequence[str]]) -> tuple[list[str], list[dict[str,
         if not rowid:
             continue
 
-        def take(index: int) -> str:
-            return cells[index] if index < len(cells) else ""
+        def tail(offset: int) -> str:
+            return cells[-offset] if len(cells) >= offset else ""
 
-        sku_lines = [line.strip() for line in take(11).splitlines() if line.strip()]
-        price_lines = [line.strip() for line in take(12).splitlines() if line.strip()]
+        site = ""
+        site_index = -1
+        for index in range(4, min(9, len(cells))):
+            token = cells[index].strip().upper()
+            if token and (token in site_names or token in SITE_CODES):
+                site, site_index = cells[index].strip(), index
+                break
+        shop = cells[site_index - 1] if site_index > 0 else (cells[5] if len(cells) > 5 else "")
+
+        sku_raw = tail(5)
+        price_raw = tail(4)
+        postage_raw = tail(3)
+        sku_lines = [line.strip() for line in sku_raw.splitlines() if line.strip()]
+        price_lines = [line.strip() for line in price_raw.splitlines() if line.strip()]
+
         records.append(
             {
                 "rowid": rowid,
-                "shop": " ".join(take(5).split()),
-                "site": take(6),
-                "title": take(7)[:120],
+                "shop": " ".join(shop.split()),
+                "site": site,
+                "title": cells[7] if len(cells) > 7 else "",
                 "sku": sku_lines[0] if sku_lines else "",
                 "price": _number(price_lines[0]) if price_lines else None,
-                "postage": _number(take(13).splitlines()[0]) if take(13) else None,
+                "postage": _number(postage_raw.splitlines()[0]) if postage_raw else None,
                 "variants": len(sku_lines),
             }
         )

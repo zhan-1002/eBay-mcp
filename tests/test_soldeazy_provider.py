@@ -168,3 +168,16 @@ def test_parse_rows_tolerates_an_empty_page() -> None:
 def test_parse_rows_ignores_rows_without_a_datasheet_id() -> None:
     _, records = parse_rows([REAL_HEADER, [""] + ["x"] * 15])
     assert records == []
+
+# 筛选后列表少一列（勾选框不见了），内容锚定仍应取对
+ROW_SINGLE_15 = ROW_SINGLE[1:]
+
+
+def test_parse_rows_survives_a_column_shift() -> None:
+    _, records = parse_rows([REAL_HEADER, ROW_SINGLE_15])
+    record = records[0]
+    assert record["rowid"] == "4567313"
+    assert record["shop"] == "EBAY TUD"
+    assert record["site"] == "US"
+    assert record["sku"] == "PCPB0028US"
+    assert record["price"] == pytest.approx(20.99)
