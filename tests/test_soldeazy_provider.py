@@ -137,6 +137,7 @@ def test_parse_rows_uses_the_measured_cell_positions() -> None:
     assert len(records) == 1
     record = records[0]
     assert record["rowid"] == "4567313"
+    assert record["shop"] == "EBAY TUD"
     assert record["site"] == "US"
     assert record["sku"] == "PCPB0028US"
     assert record["price"] == pytest.approx(20.99)

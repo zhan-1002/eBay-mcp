@@ -528,6 +528,7 @@ def parse_rows(rows: Sequence[Sequence[str]]) -> tuple[list[str], list[dict[str,
         records.append(
             {
                 "rowid": rowid,
+                "shop": " ".join(take(5).split()),
                 "site": take(6),
                 "title": take(7)[:120],
                 "sku": sku_lines[0] if sku_lines else "",
