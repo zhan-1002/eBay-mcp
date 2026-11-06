@@ -109,3 +109,28 @@ def test_write_tool_defaults_to_dry_run():
     assert signature.parameters["dry_run"].default is True
     signature = inspect.signature(server.soldeazy_update_stock)
     assert signature.parameters["dry_run"].default is True
+
+def test_shop_scope_collects_distinct_shops():
+    found = {
+        "rows": [
+            {"shop": "EBAY FUN"},
+            {"shop": "EBAY FUN"},
+            {"shop": "EBAY LT"},
+            {"shop": None},
+            {"shop": "  "},
+        ]
+    }
+    assert server._shop_scope(found) == ["EBAY FUN", "EBAY LT"]
+    assert server._shop_scope({}) == []
+    assert server._shop_scope({"rows": []}) == []
+
+
+def test_new_write_tools_default_to_dry_run():
+    import inspect
+
+    for tool in (
+        server.soldeazy_create_datasheet,
+        server.soldeazy_delete_datasheet,
+        server.soldeazy_upload_photo,
+    ):
+        assert inspect.signature(tool).parameters["dry_run"].default is True

@@ -594,6 +594,13 @@ async def _collect_site_rows(
     return found, rows_from_matrix(body, first_row=3), exported
 
 
+def _shop_scope(found: dict[str, Any]) -> list[str]:
+    """搜索结果里出现的渠道账号集合（用于确认写回时还是同一批店铺）。"""
+
+    names = {(row.get("shop") or "").strip() for row in found.get("rows") or []}
+    return sorted(name for name in names if name)
+
+
 def _manifest_path() -> str:
     configured = (settings.soldeazy_manifest_path or "").strip()
     if configured:
@@ -642,7 +649,12 @@ async def soldeazy_preview_price_change(
                 query,
                 [change.as_dict() for change in plan.changes],
                 rows_to_state(found["rows"]),
-                context={"targets": site_targets, "pack_policy": pack_policy},
+                context={
+                    "targets": site_targets,
+                    "pack_policy": pack_policy,
+                    "shop_scope": _shop_scope(found),
+                    "active_shop": dict(soldeazy.active_shop or {}),
+                },
             ).token
 
         return success(
@@ -708,7 +720,12 @@ async def soldeazy_preview_stock_change(site: str, stock_sheet_path: str) -> dic
                 query,
                 [change.as_dict() for change in plan.changes],
                 rows_to_state(found["rows"]),
-                context={"stock": sheet.entries, "catalog": catalog},
+                context={
+                    "stock": sheet.entries,
+                    "catalog": catalog,
+                    "shop_scope": _shop_scope(found),
+                    "active_shop": dict(soldeazy.active_shop or {}),
+                },
             ).token
 
         return success(
@@ -765,6 +782,25 @@ async def _apply_write(kind: str, confirm_token: str, dry_run: bool) -> dict[str
         )
 
     found, rows, exported = await _collect_site_rows(plan.site, plan.query)
+
+    # 账号守卫：切过账号后拿旧令牌写入是能跑通的错误路径，这里直接拦住
+    expected_scope = plan.context.get("shop_scope")
+    if expected_scope is not None:
+        now_scope = _shop_scope(found)
+        if now_scope != expected_scope:
+            raise EbayMcpError(
+                "SOLDEAZY_SHOP_CHANGED",
+                "当前搜索到的渠道账号与预览时不一致，已中止（未上传）",
+                details={"expected": expected_scope, "now": now_scope},
+            )
+    expected_shop = plan.context.get("active_shop") or {}
+    current_shop = dict(soldeazy.active_shop or {})
+    if expected_shop.get("id") and expected_shop.get("id") != current_shop.get("id"):
+        raise EbayMcpError(
+            "SOLDEAZY_SHOP_CHANGED",
+            "活动渠道账号已切换，请重新预览后再写入",
+            details={"expected": expected_shop, "now": current_shop},
+        )
 
     drift = check_drift(plan.expected, rows_to_state(found["rows"]))
     if not drift.ok:
