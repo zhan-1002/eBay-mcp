@@ -781,9 +781,19 @@ async def _apply_write(kind: str, confirm_token: str, dry_run: bool) -> dict[str
             f"令牌是 {plan.kind} 预览发的，不能用来做 {kind}。",
         )
 
+    # 账号守卫（先做纯内存比对，切过账号就不必再去搜索了）
+    expected_shop = plan.context.get("active_shop") or {}
+    current_shop = dict(soldeazy.active_shop or {})
+    if expected_shop.get("id") and expected_shop.get("id") != current_shop.get("id"):
+        raise EbayMcpError(
+            "SOLDEAZY_SHOP_CHANGED",
+            "活动渠道账号已切换，请重新预览后再写入",
+            details={"expected": expected_shop, "now": current_shop},
+        )
+
     found, rows, exported = await _collect_site_rows(plan.site, plan.query)
 
-    # 账号守卫：切过账号后拿旧令牌写入是能跑通的错误路径，这里直接拦住
+    # 搜索回来的账号若和预览时不一致，同样中止
     expected_scope = plan.context.get("shop_scope")
     if expected_scope is not None:
         now_scope = _shop_scope(found)
@@ -793,14 +803,6 @@ async def _apply_write(kind: str, confirm_token: str, dry_run: bool) -> dict[str
                 "当前搜索到的渠道账号与预览时不一致，已中止（未上传）",
                 details={"expected": expected_scope, "now": now_scope},
             )
-    expected_shop = plan.context.get("active_shop") or {}
-    current_shop = dict(soldeazy.active_shop or {})
-    if expected_shop.get("id") and expected_shop.get("id") != current_shop.get("id"):
-        raise EbayMcpError(
-            "SOLDEAZY_SHOP_CHANGED",
-            "活动渠道账号已切换，请重新预览后再写入",
-            details={"expected": expected_shop, "now": current_shop},
-        )
 
     drift = check_drift(plan.expected, rows_to_state(found["rows"]))
     if not drift.ok:
