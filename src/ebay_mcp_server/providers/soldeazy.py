@@ -543,6 +543,65 @@ class SoldeazyBrowser:
 
         return {"success": True, "path": str(path), "file": path.name}
 
+    async def sync_up_via_api(
+        self, *, price_postage: bool = True, quantity: bool = False
+    ) -> dict[str, Any]:
+        """用接口提交「同步上平台」，替代点弹框。
+
+        前提：当前页面已在搜索结果上、且目标行已勾选（`table_row_ids`）。
+        `sql_cache_token` 由本次搜索下发，必须从页面上取，不能沿用旧值。
+        """
+
+        page = await self._ensure_page()
+        token = await page.evaluate(
+            "() => ((document.querySelector('input[name=sql_cache_token]')||{}).value || '')"
+        )
+        row_ids = await page.evaluate("""
+        () => {
+          const out = [];
+          Array.from(document.querySelectorAll('#tbl_dSheet tr')).forEach(r => {
+            const box = r.querySelector('input[type=checkbox]');
+            if (!box || !box.checked) return;
+            const cells = Array.from(r.cells).map(c => (c.innerText || '').trim());
+            const hit = cells.find(t => /^\d{6,}$/.test(t));
+            if (hit) out.push(hit);
+          });
+          return out;
+        }
+        """)
+        if not row_ids:
+            raise EbayMcpError("SOLDEAZY_NO_SELECTION", "没有勾选任何数据表，无法同步。")
+
+        form = {
+            "mode": "bulk_dalign",
+            "second_mode": "dsheet_list",
+            "table_action": "show",
+            "bulk_option": "selected_items",
+            "table_row_ids": ",".join(row_ids),
+            "dalign_price": "1" if price_postage else "0",
+            "dalign_imghttps": "1",
+            "dalign_option": "2",
+            "sql_cache_token": token,
+        }
+        if quantity:
+            form["dalign_qty"] = "1"
+
+        response = await page.context.request.post(
+            f"{self.base_url}/app/soldeazy/datasheet", form=form, timeout=120_000
+        )
+        text = (await response.text()) or ""
+        hints = []
+        for marker in ("没有在线刊登", "New D-Align", "同步成功", "已加入", "失败"):
+            if marker in text:
+                hints.append(marker)
+        return {
+            "success": response.status == 200,
+            "status": response.status,
+            "rows": len(row_ids),
+            "table_row_ids": row_ids,
+            "hints": hints,
+        }
+
     async def upload_via_api(self, path: Path) -> dict[str, Any]:
         """用页面同款接口上传 _done.xlsx（multipart，字段 filePackage）。
 
