@@ -636,6 +636,13 @@ class SoldeazyBrowser:
         page = await self._ensure_page()
         await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
         await asyncio.sleep(1.5)
+
+        # 删除表单必须带着当前搜索上下文提交，先把目标行搜出来
+        await page.locator("input[name=txtdsheetrowid]").first.fill(ids[0])
+        await page.locator("#btn_search").first.click()
+        await page.wait_for_load_state("domcontentloaded")
+        await asyncio.sleep(2)
+
         await page.evaluate("""
         ([ids]) => {
           const form = document.querySelector('form');
