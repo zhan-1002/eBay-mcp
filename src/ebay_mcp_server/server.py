@@ -881,6 +881,55 @@ async def soldeazy_update_stock(confirm_token: str, dry_run: bool = True) -> dic
         )
 
 
+@mcp.tool(annotations=READ_ONLY_NETWORK)
+async def soldeazy_list_shops(keyword: str = "") -> dict[str, Any]:
+    """List the channel accounts (eBay shops) this login may operate.
+
+    Returns each shop's id and short name; `keyword` filters by name. The list
+    comes from the datasheet search form, which reflects the site's own
+    authorisation rather than a guessed inventory.
+    """
+    try:
+        shops = await soldeazy.list_shop_options()
+        active = soldeazy.active_shop or {}
+        if keyword:
+            needle = keyword.strip().upper()
+            shops = [s for s in shops if needle in s["name"].upper() or needle in s["id"]]
+        return success(
+            "soldeazy_list_shops",
+            "soldeazy",
+            {"count": len(shops), "active": active, "shops": shops},
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_list_shops", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy shop list error")
+        return tool_error(
+            "soldeazy_list_shops",
+            EbayMcpError("SOLDEAZY_SHOPS_ERROR", f"读取渠道账号失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=LOCAL_SESSION_ACTION)
+async def soldeazy_switch_shop(shop: str) -> dict[str, Any]:
+    """Switch the active channel account for later calls.
+
+    Accepts the short name (`FUN`) or the numeric id. After switching, search
+    and preview tools default to this shop instead of asking again.
+    """
+    try:
+        picked = await soldeazy.switch_shop(shop)
+        return success("soldeazy_switch_shop", "soldeazy", {"active": picked})
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_switch_shop", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy switch error")
+        return tool_error(
+            "soldeazy_switch_shop",
+            EbayMcpError("SOLDEAZY_SWITCH_ERROR", f"切换渠道账号失败: {type(exc).__name__}"),
+        )
+
+
 @mcp.tool(annotations=READ_ONLY_LOCAL)
 async def soldeazy_change_history(
     limit: int = 20,

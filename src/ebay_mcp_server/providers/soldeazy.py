@@ -170,6 +170,7 @@ class SoldeazyBrowser:
         self._context: Any = None
         self._page: Any = None
         self._lock = asyncio.Lock()
+        self.active_shop: dict[str, str] | None = None
 
     # ---------- 生命周期 ----------
     @property
@@ -316,6 +317,7 @@ class SoldeazyBrowser:
             await (await self._locate("search_sku")).fill(sku_terms)
             if site:
                 await self._select_site(site)
+            shop = shop or ((self.active_shop or {}).get("name") or "")
             if shop:
                 await self._select_shop(shop)
             await self._select_scope_whole_result()
@@ -373,37 +375,54 @@ class SoldeazyBrowser:
                 continue
         return selected
 
-    async def list_shops(self, keyword: str = "") -> list[dict[str, Any]]:
-        """读渠道账号对照表（账号简称 / eBay 账号 / 站点 / token 状态）。
+    async def list_shop_options(self) -> list[dict[str, str]]:
+        """列出可用渠道账号（搜索表单里 `select[name='listshop[]']` 的选项）。
 
-        入口在 `/app/soldeazy/ebayac`；表结构按表头识别，找不到就用最长的表。
+        这是站点给当前登录账号授权的门店清单，比 /ebayac 页面更可靠。
         """
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}/app/soldeazy/ebayac", wait_until="domcontentloaded")
-        await asyncio.sleep(2)
+        if not (page.url or "").startswith(self.base_url):
+            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await asyncio.sleep(1.5)
 
-        raw = await page.evaluate("""
-        () => Array.from(document.querySelectorAll('table')).map(t => {
-          const rows = Array.from(t.rows).map(r =>
-            Array.from(r.cells).map(c => (c.innerText || '').trim()));
-          return {id: t.id, rows: rows};
-        })
+        options = await page.evaluate("""
+        () => {
+          const sel = Array.from(document.querySelectorAll('select'))
+            .find(x => x.name === 'listshop[]');
+          if (!sel) return [];
+          return Array.from(sel.options)
+            .map(o => ({id: o.value, name: o.textContent.trim()}))
+            .filter(o => o.id && o.name);
+        }
         """)
+        return options
 
-        best = max(raw, key=lambda item: len(item["rows"]), default=None)
-        if not best or len(best["rows"]) < 2:
-            return []
+    async def switch_shop(self, shop: str) -> dict[str, str]:
+        """切换当前渠道账号（后续搜索/预览/写入默认用它）。"""
 
-        header = [cell.replace("\n", " ") for cell in best["rows"][0]]
-        records: list[dict[str, Any]] = []
-        for cells in best["rows"][1:]:
-            record = {header[i]: cells[i] for i in range(min(len(header), len(cells)))}
-            flat = " ".join(cells).upper()
-            if keyword and keyword.upper() not in flat:
-                continue
-            records.append(record)
-        return records
+        wanted = (shop or "").strip()
+        if not wanted:
+            raise EbayMcpError("SOLDEAZY_SHOP_REQUIRED", "请给出渠道账号简称或 id")
+        options = await self.list_shop_options()
+        if not options:
+            raise EbayMcpError("SOLDEAZY_SHOP_LIST_EMPTY", "没能读到渠道账号列表")
+
+        hit = next((o for o in options if o["id"] == wanted), None)
+        if hit is None:
+            upper = wanted.upper()
+            hit = next((o for o in options if o["name"].upper() == upper), None)
+        if hit is None:
+            hit = next((o for o in options if upper in o["name"].upper()), None)
+        if hit is None:
+            raise EbayMcpError(
+                "SOLDEAZY_SHOP_NOT_FOUND",
+                f"渠道账号里没有 {shop}",
+                details={"available": [o["name"] for o in options][:20]},
+            )
+
+        self.active_shop = hit
+        return hit
 
     async def _select_shop(self, shop: str) -> None:
         """按渠道账号过滤。控件是 Chosen 多选，原生 select 被隐藏，
@@ -601,6 +620,104 @@ class SoldeazyBrowser:
             "table_row_ids": row_ids,
             "hints": hints,
         }
+
+    async def delete_datasheets(self, rowids: Sequence[str]) -> dict[str, Any]:
+        """删除数据表（实测：整表单提交，不是 AJAX）。
+
+        关键参数：`table_action=bulk-delete` + `mode=dsheet_datatable`
+        + `table_row_ids`。`mode` 必须是 `dsheet_datatable`，
+        用搜索的 `dsheet_list` 提交不会生效（也不会报错）。
+        """
+
+        ids = [str(rowid).strip() for rowid in rowids if str(rowid).strip()]
+        if not ids:
+            raise EbayMcpError("SOLDEAZY_NO_ROWID", "没有给出要删除的数据表编号")
+
+        page = await self._ensure_page()
+        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(1.5)
+        await page.evaluate("""
+        ([ids]) => {
+          const form = document.querySelector('form');
+          if (!form) return false;
+          const put = (id, name, value) => {
+            let el = form.querySelector('#' + id);
+            if (!el) {
+              el = document.createElement('input');
+              el.type = 'hidden'; el.id = id; el.name = name;
+              form.appendChild(el);
+            }
+            el.value = value;
+          };
+          put('table_action', 'table_action', 'bulk-delete');
+          put('mode', 'mode', 'dsheet_datatable');
+          put('second_mode', 'second_mode', 'dsheet_list');
+          put('table_row_ids', 'table_row_ids', ids.join(','));
+          form.submit();
+          return true;
+        }
+        """, [ids])
+        await asyncio.sleep(6)
+        return {"success": True, "requested": ids, "url": page.url}
+
+    async def create_from_listing_spy(
+        self,
+        item_ids: str,
+        shop_idx: str,
+        *,
+        channel_type: str = "EBAY",
+        template_idx: str = "",
+        profile_idx: str = "",
+    ) -> dict[str, Any]:
+        """用刊登编号创建数据表（封存文档里验证过的接口）。
+
+        先过协议门禁 `mode=agree`，再调 `mode=create_datasheet_from_listing_spy`。
+        注意：`res_flag=0` 不代表内容是真的，调用方仍需校验返回标题。
+        """
+
+        page = await self._ensure_page()
+        request = page.context.request
+        ajax = f"{self.base_url}/app/soldeazy/datasheet_ajax"
+
+        await request.post(ajax, form={"mode": "agree"}, timeout=60_000)
+        response = await request.post(
+            ajax,
+            form={
+                "mode": "create_datasheet_from_listing_spy",
+                "channel_type": channel_type,
+                "item_ids": item_ids,
+                "shop_idx": str(shop_idx),
+                "template_idx": template_idx,
+                "profile_idx": profile_idx,
+            },
+            timeout=180_000,
+        )
+        text = (await response.text()).lstrip("\ufeff").strip()
+        try:
+            payload = json.loads(text)
+        except ValueError as exc:
+            raise EbayMcpError(
+                "SOLDEAZY_CREATE_BAD_RESPONSE",
+                "创建接口返回的不是 JSON",
+                details={"head": text[:200]},
+            ) from exc
+
+        items = payload if isinstance(payload, list) else [payload]
+        summary = []
+        for item in items:
+            dsheet = item.get("res_dsheet") or {}
+            summary.append(
+                {
+                    "item_id": item.get("res_item_id"),
+                    "rowid": item.get("res_rowid"),
+                    "flag": item.get("res_flag"),
+                    "message": item.get("res_message"),
+                    "title": dsheet.get("dsheet_titleexternal") or dsheet.get("dsheet_titleinternal"),
+                    "site": dsheet.get("dsheet_sitecode"),
+                    "product_code": dsheet.get("dsheet_product_code"),
+                }
+            )
+        return {"success": True, "created": len(summary), "items": summary}
 
     async def upload_via_api(self, path: Path) -> dict[str, Any]:
         """用页面同款接口上传 _done.xlsx（multipart，字段 filePackage）。
