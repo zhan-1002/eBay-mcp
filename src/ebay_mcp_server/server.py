@@ -811,10 +811,12 @@ async def _apply_write(kind: str, confirm_token: str, dry_run: bool) -> dict[str
     report = build_upload_file(
         exported, target, to_cell_changes(recomputed.changes, field)
     )
-    await soldeazy.upload(target)
+    # 走接口上传：与页面等价，但没有 UI 等待，失败信息更直接
+    upload = await soldeazy.upload_via_api(target)
     # 上传后重新搜索，让 BULK SYNC 作用在刚传上去的那批行上
     await soldeazy.search(plan.query, plan.site)
-    sync = await soldeazy.sync_up(**sync_kwargs)
+    await soldeazy._ensure_rows_selected()  # noqa: SLF001 - 同步同样只作用于勾选行
+    sync = await soldeazy.sync_up_via_api(**sync_kwargs)
 
     append_manifest(
         _manifest_path(),
@@ -826,6 +828,7 @@ async def _apply_write(kind: str, confirm_token: str, dry_run: bool) -> dict[str
             "uploaded": report["path"],
             "changed_columns": report["changed_columns"],
             "changes": report["changes"],
+            "upload_handle": upload.get("handle"),
             "sync": sync,
         },
     )
@@ -927,6 +930,198 @@ async def soldeazy_switch_shop(shop: str) -> dict[str, Any]:
         return tool_error(
             "soldeazy_switch_shop",
             EbayMcpError("SOLDEAZY_SWITCH_ERROR", f"切换渠道账号失败: {type(exc).__name__}"),
+        )
+
+
+def _require_write_enabled() -> None:
+    if not settings.soldeazy_write_enabled:
+        raise EbayMcpError(
+            "SOLDEAZY_WRITE_DISABLED",
+            "写工具未开启：确认只读链路验证通过后设置 SOLDEAZY_WRITE_ENABLED=1。",
+        )
+
+
+async def _resolve_shop_id(shop: str) -> dict[str, str]:
+    """把渠道账号简称/id 解析成 {id, name}，空值回落到当前 active。"""
+
+    if shop:
+        return await soldeazy.switch_shop(shop)
+    if soldeazy.active_shop:
+        return soldeazy.active_shop
+    raise EbayMcpError(
+        "SOLDEAZY_SHOP_REQUIRED",
+        "还没有选定渠道账号：先调用 soldeazy_switch_shop。",
+    )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_create_datasheet(
+    item_ids: str = "",
+    shop: str = "",
+    template: str = "",
+    site: str = "US",
+    title: str = "",
+    sku: str = "",
+    price: float = 0.0,
+    qty: int = 0,
+    category: str = "",
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Create a new datasheet, either copied from live listings or built from scratch.
+
+    Two modes:
+
+    * ``item_ids`` given → ``create_datasheet_from_listing_spy``, which copies the
+      listing content and returns the full 212-field payload;
+    * no ``item_ids`` → creates a blank datasheet (``template`` presets the
+      listing parameters), then optionally fills title/SKU/price/qty/category.
+
+    ``dry_run`` defaults to true and only reports what would happen.
+    """
+
+    try:
+        picked = await _resolve_shop_id(shop)
+        plan: dict[str, Any] = {
+            "shop": picked,
+            "site": site,
+            "template": template,
+            "item_ids": item_ids,
+        }
+
+        if item_ids:
+            plan["mode"] = "from_listing"
+            if dry_run:
+                return success("soldeazy_create_datasheet", "soldeazy", {**plan, "dry_run": True})
+            _require_write_enabled()
+            created = await soldeazy.create_from_listing_spy(item_ids, picked["id"])
+            return success(
+                "soldeazy_create_datasheet", "soldeazy", {**plan, "dry_run": False, **created}
+            )
+
+        fields: dict[str, Any] = {}
+        if title:
+            fields["dsheet_titleexternal"] = title
+        if category:
+            fields["dsheet_ebcategory"] = category
+        if sku:
+            fields["dsheet_full_item_model"] = sku
+            fields["dsku_product_code[]"] = sku
+        if price:
+            fields["dsku_price[]"] = price
+        if qty:
+            fields["dsku_qty[]"] = qty
+
+        plan.update({"mode": "blank", "fields": fields})
+        if dry_run:
+            return success("soldeazy_create_datasheet", "soldeazy", {**plan, "dry_run": True})
+
+        _require_write_enabled()
+        blank = await soldeazy.create_blank_datasheet(
+            shop_idx=picked["id"], site_code=site, template_idx=template
+        )
+        saved = await soldeazy.save_datasheet_fields(blank["rowid"], fields) if fields else None
+        return success(
+            "soldeazy_create_datasheet",
+            "soldeazy",
+            {**plan, "dry_run": False, "rowid": blank["rowid"], "saved": saved},
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_create_datasheet", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy create error")
+        return tool_error(
+            "soldeazy_create_datasheet",
+            EbayMcpError("SOLDEAZY_CREATE_ERROR", f"创建数据表失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_delete_datasheet(rowids: str, dry_run: bool = True) -> dict[str, Any]:
+    """Delete one or more datasheets by row id (comma separated).
+
+    Deletion submits the list form with ``table_action=bulk-delete`` and
+    ``mode=dsheet_datatable``; the row must be searched first or the server
+    silently ignores the request.
+    """
+
+    try:
+        ids = [part.strip() for part in (rowids or "").split(",") if part.strip()]
+        if not ids:
+            raise EbayMcpError("SOLDEAZY_NO_ROWID", "请给出要删除的数据表编号。")
+        if dry_run:
+            return success(
+                "soldeazy_delete_datasheet",
+                "soldeazy",
+                {"rowids": ids, "dry_run": True},
+            )
+        _require_write_enabled()
+        result = await soldeazy.delete_datasheets(ids)
+        return success(
+            "soldeazy_delete_datasheet", "soldeazy", {**result, "dry_run": False}
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_delete_datasheet", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy delete error")
+        return tool_error(
+            "soldeazy_delete_datasheet",
+            EbayMcpError("SOLDEAZY_DELETE_ERROR", f"删除数据表失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_upload_photo(
+    file_path: str = "",
+    image_url: str = "",
+    rowid: str = "",
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Upload a product image, or attach an already-reachable image URL.
+
+    * ``file_path`` → posts to ``datasheet_photo/upload_photos`` and returns the
+      stored file name plus the CDN address;
+    * ``image_url`` → validated with a HEAD request and used as-is (hot link);
+    * ``rowid`` given → writes the result into ``dsheet_gallery`` and saves.
+
+    ``dry_run`` defaults to true: nothing is uploaded and nothing is saved.
+    """
+
+    try:
+        plan: dict[str, Any] = {"rowid": rowid, "file_path": file_path, "image_url": image_url}
+        if not file_path and not image_url:
+            raise EbayMcpError("SOLDEAZY_PHOTO_SOURCE", "请给出 file_path 或 image_url。")
+        if dry_run:
+            return success("soldeazy_upload_photo", "soldeazy", {**plan, "dry_run": True})
+
+        _require_write_enabled()
+        if file_path:
+            source = Path(file_path).expanduser()
+            if not source.is_file():
+                raise EbayMcpError("SOLDEAZY_PHOTO_MISSING", f"文件不存在: {source}")
+            uploaded = await soldeazy.upload_photo(source)
+            gallery = uploaded["file_name"]
+            plan.update({"uploaded": uploaded, "gallery": gallery})
+        else:
+            response = await soldeazy.head_url(image_url)
+            if response != 200:
+                raise EbayMcpError(
+                    "SOLDEAZY_PHOTO_UNREACHABLE",
+                    f"图片地址不可访问: HTTP {response}",
+                )
+            gallery = image_url
+            plan.update({"gallery": gallery})
+
+        if rowid:
+            saved = await soldeazy.save_datasheet_fields(rowid, {"dsheet_gallery": gallery})
+            plan["saved"] = saved
+        return success("soldeazy_upload_photo", "soldeazy", {**plan, "dry_run": False})
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_upload_photo", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy photo error")
+        return tool_error(
+            "soldeazy_upload_photo",
+            EbayMcpError("SOLDEAZY_PHOTO_ERROR", f"图片处理失败: {type(exc).__name__}"),
         )
 
 

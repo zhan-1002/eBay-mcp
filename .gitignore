@@ -1,4 +1,4 @@
-﻿config.local.json
+config.local.json
 config.local.json*
 .env
 .venv/
@@ -28,4 +28,5 @@ sales-profile/
 .live/
 .live-probe/
 .live-verify/
+.live-*/
 pytest-of-*/

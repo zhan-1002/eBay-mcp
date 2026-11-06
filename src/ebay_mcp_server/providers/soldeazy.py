@@ -582,7 +582,7 @@ class SoldeazyBrowser:
             const box = r.querySelector('input[type=checkbox]');
             if (!box || !box.checked) return;
             const cells = Array.from(r.cells).map(c => (c.innerText || '').trim());
-            const hit = cells.find(t => /^\d{6,}$/.test(t));
+            const hit = cells.find(t => /^[0-9]{6,}$/.test(t));
             if (hit) out.push(hit);
           });
           return out;
@@ -619,6 +619,187 @@ class SoldeazyBrowser:
             "rows": len(row_ids),
             "table_row_ids": row_ids,
             "hints": hints,
+        }
+
+    async def create_blank_datasheet(
+        self, *, shop_idx: str, site_code: str = "US", template_idx: str = ""
+    ) -> dict[str, Any]:
+        """从0创建一条空数据表，返回新 rowid（模板只预设刊登参数，不含产品数据）。"""
+
+        page = await self._ensure_page()
+        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(1.5)
+        before = await self._row_ids(page)
+
+        response = await page.context.request.post(
+            f"{self.base_url}/app/soldeazy/datasheet-create/index",
+            form={
+                "mode": "dsheet_datatable",
+                "table_action": "create",
+                "new_dsheet_shop_initial_idx": str(shop_idx),
+                "new_dsheet_site_code": site_code,
+                "new_dsheet_biz_profile_idx": "",
+                "new_dsheet_listing_template_idx": str(template_idx),
+                "new_dsheet_price_margin": "NaN",
+                "new_dsheet_channel_service_fee": "NaN",
+                "new_dsheet_price": "NaN",
+            },
+            timeout=120_000,
+        )
+        html = (await response.text()).lstrip("\ufeff")
+        match = re.search(r"dsheet_row_id[^>]*value=['\"](\d+)", html) or re.search(
+            r"table_row_id=(\d+)", html
+        )
+        if match:
+            return {"success": True, "rowid": match.group(1), "source": "response"}
+
+        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(2)
+        after = await self._row_ids(page)
+        new = [rowid for rowid in after if rowid not in before]
+        if not new:
+            raise EbayMcpError(
+                "SOLDEAZY_CREATE_NO_ROWID", "创建后没能确定新数据表编号"
+            )
+        return {"success": True, "rowid": new[0], "source": "list_diff"}
+
+    async def _row_ids(self, page: Any) -> list[str]:
+        return await page.evaluate(
+            """
+            () => Array.from(document.querySelectorAll('#tbl_dSheet tr'))
+              .map(r => Array.from(r.cells).map(c => (c.innerText || '').trim()))
+              .map(c => c.find(t => /^\\d{6,}$/.test(t))).filter(Boolean)
+            """
+        )
+
+    async def save_datasheet_fields(
+        self, rowid: str, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        """打开数据表编辑页，按字段名填值并点「储存」。
+
+        价格/数量/SKU 在 ``dsku_price[]`` / ``dsku_qty[]`` / ``dsku_product_code[]``，
+        用 ``dsheet_price`` 之类会静默丢字段。
+        """
+
+        page = await self._ensure_page()
+        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(1.5)
+        await page.evaluate(
+            """
+            (rowid) => {
+              const f = document.createElement('form');
+              f.method = 'POST';
+              f.action = '/app/soldeazy/datasheet';
+              const add = (n, v) => {
+                const i = document.createElement('input');
+                i.type = 'hidden'; i.name = n; i.value = v;
+                f.appendChild(i);
+              };
+              add('mode', 'dsheet_datatable');
+              add('table_action', 'edit');
+              add('table_row_id', rowid);
+              document.body.appendChild(f);
+              f.submit();
+            }
+            """,
+            str(rowid),
+        )
+        await page.wait_for_load_state("domcontentloaded")
+        await asyncio.sleep(2.5)
+
+        applied = await page.evaluate(
+            """
+            (values) => {
+              const done = {};
+              Object.entries(values).forEach(([name, value]) => {
+                const el = document.querySelector('[name="' + name + '"]');
+                if (!el) { done[name] = 'missing'; return; }
+                if (el.tagName === 'SELECT') {
+                  const opt = Array.from(el.options)
+                    .find(o => o.value === String(value) || o.textContent.trim() === String(value));
+                  if (!opt) { done[name] = 'no option'; return; }
+                  opt.selected = true;
+                } else {
+                  el.value = value;
+                }
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+                el.dispatchEvent(new Event('change', {bubbles: true}));
+                done[name] = 'ok';
+              });
+              return done;
+            }
+            """,
+            values,
+        )
+
+        await asyncio.sleep(0.5)
+        clicked = await page.evaluate(
+            """
+            () => {
+              const btns = Array.from(document.querySelectorAll('button,input[type=button],a'))
+                .filter(el => el.offsetParent);
+              const hit = btns.find(b => (b.value || b.innerText || '').trim() === '储存');
+              if (!hit) return null;
+              hit.click();
+              return '储存';
+            }
+            """
+        )
+        await asyncio.sleep(6)
+        notice = await page.evaluate(
+            """
+            () => {
+              const el = document.querySelector('[class*=ajax-error], [class*=error-msg], [class*=notice]');
+              return el && el.offsetParent ? (el.innerText || '').trim().slice(0, 200) : '';
+            }
+            """
+        )
+        return {
+            "success": clicked is not None and not notice,
+            "rowid": str(rowid),
+            "filled": applied,
+            "notice": notice,
+        }
+
+    async def head_url(self, url: str) -> int:
+        """探测图片地址是否可访问，返回 HTTP 状态（不可达返回 0）。"""
+
+        page = await self._ensure_page()
+        try:
+            response = await page.context.request.head(url, timeout=30_000)
+            return response.status
+        except Exception:  # noqa: BLE001 - 任何网络异常都按不可达处理
+            return 0
+
+    async def upload_photo(self, path: Path) -> dict[str, Any]:
+        """上传产品图片，返回数据表 gallery 字段应填的文件名与 CDN 地址。"""
+
+        page = await self._ensure_page()
+        response = await page.context.request.post(
+            f"{self.base_url}/app/soldeazy/datasheet_photo/upload_photos",
+            multipart={
+                "photofile": {
+                    "name": path.name,
+                    "mimeType": "image/jpeg",
+                    "buffer": path.read_bytes(),
+                }
+            },
+            timeout=180_000,
+        )
+        text = await response.text()
+        match = re.search(r"upload_res\s*=\s*(\{.*?\})\s*;", text, re.S)
+        if not match:
+            raise EbayMcpError(
+                "SOLDEAZY_PHOTO_UPLOAD_FAILED",
+                "图片上传没有返回 upload_res",
+                details={"head": text[:200]},
+            )
+        body = json.loads(match.group(1))
+        return {
+            "success": True,
+            "file_name": body.get("file_name"),
+            "real_name": body.get("real_name"),
+            "gallery_type": body.get("gallery_type"),
         }
 
     async def delete_datasheets(self, rowids: Sequence[str]) -> dict[str, Any]:
