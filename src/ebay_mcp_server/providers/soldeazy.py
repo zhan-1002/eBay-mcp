@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -541,6 +542,44 @@ class SoldeazyBrowser:
             ) from exc
 
         return {"success": True, "path": str(path), "file": path.name}
+
+    async def upload_via_api(self, path: Path) -> dict[str, Any]:
+        """用页面同款接口上传 _done.xlsx（multipart，字段 filePackage）。
+
+        与点页面等价，但省掉 UI 等待，返回服务端的 `handle` 便于后续追踪。
+        """
+
+        page = await self._ensure_page()
+        payload = path.read_bytes()
+        response = await page.context.request.post(
+            f"{self.base_url}{UPLOAD_PATH}/upload",
+            multipart={
+                "filePackage": {
+                    "name": path.name,
+                    "mimeType": (
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ),
+                    "buffer": payload,
+                }
+            },
+            timeout=120_000,
+        )
+        if response.status != 200:
+            raise EbayMcpError(
+                "SOLDEAZY_UPLOAD_FAILED",
+                f"上传接口返回 HTTP {response.status}",
+            )
+        # 服务端会带 UTF-8 BOM，直接 response.json() 会炸
+        text = (await response.text()).lstrip("\ufeff").strip()
+        body = json.loads(text) if text else {}
+        handle = (body.get("handle") or {}) if isinstance(body, dict) else {}
+        return {
+            "success": True,
+            "path": str(path),
+            "file": path.name,
+            "handle": handle.get(path.name),
+            "response": body,
+        }
 
     async def sync_up(self, *, price_postage: bool = True, quantity: bool = False) -> dict[str, Any]:
         if not (price_postage or quantity):
