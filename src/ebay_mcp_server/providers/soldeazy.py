@@ -372,6 +372,38 @@ class SoldeazyBrowser:
                 continue
         return selected
 
+    async def list_shops(self, keyword: str = "") -> list[dict[str, Any]]:
+        """读渠道账号对照表（账号简称 / eBay 账号 / 站点 / token 状态）。
+
+        入口在 `/app/soldeazy/ebayac`；表结构按表头识别，找不到就用最长的表。
+        """
+
+        page = await self._ensure_page()
+        await page.goto(f"{self.base_url}/app/soldeazy/ebayac", wait_until="domcontentloaded")
+        await asyncio.sleep(2)
+
+        raw = await page.evaluate("""
+        () => Array.from(document.querySelectorAll('table')).map(t => {
+          const rows = Array.from(t.rows).map(r =>
+            Array.from(r.cells).map(c => (c.innerText || '').trim()));
+          return {id: t.id, rows: rows};
+        })
+        """)
+
+        best = max(raw, key=lambda item: len(item["rows"]), default=None)
+        if not best or len(best["rows"]) < 2:
+            return []
+
+        header = [cell.replace("\n", " ") for cell in best["rows"][0]]
+        records: list[dict[str, Any]] = []
+        for cells in best["rows"][1:]:
+            record = {header[i]: cells[i] for i in range(min(len(header), len(cells)))}
+            flat = " ".join(cells).upper()
+            if keyword and keyword.upper() not in flat:
+                continue
+            records.append(record)
+        return records
+
     async def _select_shop(self, shop: str) -> None:
         """按渠道账号过滤。控件是 Chosen 多选，原生 select 被隐藏，
         只能直接设 selected 再触发 change/chosen:updated。"""
@@ -470,13 +502,45 @@ class SoldeazyBrowser:
         }
 
     async def upload(self, path: Path) -> dict[str, Any]:
+        """上传 _done.xlsx，等待页面出现 `Upload Completed`。
+
+        影刀块 108→118 的做法就是「选文件 → 等 3 秒 → 等 Upload Completed」，
+        中间没有别的点击；这里照做，并把失败时的页面提示带回来便于定位。
+        """
+
         page = await self._ensure_page()
         await page.goto(f"{self.base_url}{UPLOAD_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(2)
+
         await (await self._locate("upload_file")).set_input_files(str(path))
-        await (await self._locate("upload_done")).wait_for(
-            state="visible", timeout=self.settings.soldeazy_navigation_timeout * 2 * 1000
-        )
-        return {"success": True, "path": str(path)}
+        await asyncio.sleep(3)
+
+        # 站点语言不同，成功提示也不一样：英文 Upload Completed，中文 完成刊登数据上载
+        markers = ("Upload Completed", "完成刊登数据上载", "上载完成", "上传完成")
+        try:
+            for marker in markers:
+                try:
+                    await page.get_by_text(marker, exact=False).first.wait_for(
+                        state="visible", timeout=15000
+                    )
+                    break
+                except Exception:  # noqa: BLE001 - 换下一个候选文案
+                    continue
+            else:
+                raise TimeoutError("no success marker appeared")
+        except Exception as exc:  # noqa: BLE001 - 把页面提示捞出来再抛
+            text = ""
+            try:
+                text = (await page.evaluate("() => document.body.innerText || ''"))[:400]
+            except Exception:  # noqa: BLE001
+                pass
+            raise EbayMcpError(
+                "SOLDEAZY_UPLOAD_NOT_COMPLETED",
+                "上传后没有等到 Upload Completed",
+                details={"page_text": " | ".join(text.split())[:300]},
+            ) from exc
+
+        return {"success": True, "path": str(path), "file": path.name}
 
     async def sync_up(self, *, price_postage: bool = True, quantity: bool = False) -> dict[str, Any]:
         if not (price_postage or quantity):
