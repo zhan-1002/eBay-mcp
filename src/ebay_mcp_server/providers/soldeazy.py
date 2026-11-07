@@ -296,13 +296,32 @@ class SoldeazyBrowser:
             except Exception:  # noqa: BLE001 - 弹框是尽力而为
                 continue
 
+    async def _goto(self, url: str, *, attempts: int = 3) -> None:
+        """打开页面并重试：站点偶发超时会让整条流程误报成业务错误。"""
+
+        page = await self._ensure_page()
+        last: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+                return
+            except Exception as exc:  # noqa: BLE001 - 网络抖动重试
+                last = exc
+                if attempt < attempts:
+                    await asyncio.sleep(2 * attempt)
+        raise EbayMcpError(
+            "SOLDEAZY_NAV_FAILED",
+            f"打开页面失败（已重试 {attempts} 次）：{url}",
+            details={"error": str(last)[:160]},
+        )
+
     # ---------- 登录 ----------
     async def _session_alive(self) -> bool:
         """用现有 cookie 探一下列表页；不碰登录框，也不触发登录。"""
 
         page = await self._ensure_page()
         try:
-            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await self._goto(f"{self.base_url}{LIST_PATH}")
             await asyncio.sleep(1.0)
         except Exception:  # noqa: BLE001 - 网络问题交给上层重试
             return False
@@ -325,13 +344,13 @@ class SoldeazyBrowser:
                 "profile_dir": str(self.profile_dir),
             }
 
-        await page.goto(f"{self.base_url}{LOGIN_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LOGIN_PATH}")
         await asyncio.sleep(2)
         await self._dismiss_popup()
 
         # profile 里已有会话时，站点直接跳过登录页——绝不再登一次
         if "/login" not in (page.url or "").lower():
-            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await self._goto(f"{self.base_url}{LIST_PATH}")
             await self._dismiss_popup()
             return {
                 "success": True,
@@ -359,7 +378,7 @@ class SoldeazyBrowser:
             await self._wait_logged_in(page, deadline)
 
         await self._wait_logged_in(page, self.settings.soldeazy_navigation_timeout * 2)
-        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LIST_PATH}")
         await self._dismiss_popup()
         await self._save_session()
         return {"success": True, "url": page.url, "profile_dir": str(self.profile_dir)}
@@ -383,7 +402,7 @@ class SoldeazyBrowser:
         self._last_site = site or ""
         async with self._lock:
             page = await self._ensure_page()
-            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await self._goto(f"{self.base_url}{LIST_PATH}")
             await self._dismiss_popup()
 
             await (await self._locate("search_sku")).fill(sku_terms)
@@ -455,7 +474,7 @@ class SoldeazyBrowser:
 
         page = await self._ensure_page()
         if not (page.url or "").startswith(self.base_url):
-            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await self._goto(f"{self.base_url}{LIST_PATH}")
             await asyncio.sleep(1.5)
 
         options = await page.evaluate("""
@@ -582,9 +601,11 @@ class SoldeazyBrowser:
         page = await self._ensure_page()
         shop_id = (self.active_shop or {}).get("id", "")
         site_code = SITE_CODES.get((self._last_site or "").upper(), "")
-        form = {
-            "table_action": "show",
-            "mode": "dsheet_list",
+        if not (page.url or "").startswith(self.base_url):
+            await self._goto(f"{self.base_url}{LIST_PATH}")
+            await asyncio.sleep(1.0)
+
+        base_form = {
             "second_mode": "dsheet_list",
             "txtproductcode": self._last_query,
             "listshop[]": shop_id,
@@ -592,25 +613,36 @@ class SoldeazyBrowser:
             "listdate": "month",
             "view_profile_id": "Default",
             "radioEditTypeValue": "schedule",
-            "bulk_option": "whole_result",
             "bulk_option_from": "1",
             "bulk_option_to": "1",
             "listExppf": profile,
             "listExpfmt": "xlsx",
         }
+        # 实测：导出用的是 bulk-export + dsheet_datatable，不是搜索用的 show/dsheet_list
+        extra = {
+            "table_action": "bulk-export",
+            "mode": "dsheet_datatable",
+            "bulk_option": "whole_result",
+        }
         response = await page.context.request.post(
-            f"{self.base_url}/app/soldeazy/datasheet", form=form, timeout=180_000
+            f"{self.base_url}/app/soldeazy/datasheet",
+            form={**base_form, **extra},
+            timeout=180_000,
         )
         body = await response.body()
         if not body or body[:2] != b"PK":
             raise EbayMcpError(
                 "SOLDEAZY_EXPORT_API_FAILED",
                 "cookie 导出没有返回 xlsx",
-                details={"status": response.status, "head": body[:120].decode("utf-8", "ignore")},
+                details={
+                    "status": response.status,
+                    "head": body[:160].decode("utf-8", "ignore") if body else "",
+                    "form": extra,
+                },
             )
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(body)
-        return {"path": str(dest), "size": len(body), "channel": "cookie"}
+        return {"path": str(dest), "size": len(body), "channel": "cookie", "form": extra}
 
     async def export(self, dest: Path) -> dict[str, Any]:
         """导出明细。通道由 `SOLDEAZY_EXPORT_CHANNEL` 决定：
@@ -764,7 +796,7 @@ class SoldeazyBrowser:
         """从0创建一条空数据表，返回新 rowid（模板只预设刊登参数，不含产品数据）。"""
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LIST_PATH}")
         await asyncio.sleep(1.5)
         before = await self._row_ids(page)
 
@@ -790,7 +822,7 @@ class SoldeazyBrowser:
         if match:
             return {"success": True, "rowid": match.group(1), "source": "response"}
 
-        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LIST_PATH}")
         await asyncio.sleep(2)
         after = await self._row_ids(page)
         new = [rowid for rowid in after if rowid not in before]
@@ -819,7 +851,7 @@ class SoldeazyBrowser:
         """
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LIST_PATH}")
         await asyncio.sleep(1.5)
         await page.evaluate(
             """
@@ -950,7 +982,7 @@ class SoldeazyBrowser:
         """打开某条数据表的编辑表单（POST table_action=edit）。"""
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LIST_PATH}")
         await asyncio.sleep(1.5)
         await page.evaluate(
             """
@@ -1088,11 +1120,14 @@ class SoldeazyBrowser:
         target = workdir / f"state_{int(asyncio.get_running_loop().time())}.xlsx"
         await self.export(target)
 
+        from ebay_mcp_server.providers.soldeazy_workbook import header_row_count
+
         _sheet, matrix = read_matrix(target)
         values: dict[tuple[str, str], dict[str, Any]] = {}
         current = ""
         parent = ""
-        for row in matrix[1:]:
+        header = header_row_count(matrix)
+        for row in matrix[header:]:
             rowid = str(row[0] or "").strip()
             psku = str(row[2] or "").strip()
             sku = str(row[3] or "").strip()
@@ -1114,7 +1149,7 @@ class SoldeazyBrowser:
         """读工序管理任务列表（``queue-job/ajax/get-queue-jobs``）。"""
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}/app/soldeazy/queue-job", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}/app/soldeazy/queue-job")
         await asyncio.sleep(1.5)
         response = await page.context.request.post(
             f"{self.base_url}/app/soldeazy/queue-job/ajax/get-queue-jobs",
@@ -1181,7 +1216,7 @@ class SoldeazyBrowser:
             raise EbayMcpError("SOLDEAZY_NO_ROWID", "没有给出要删除的数据表编号")
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{LIST_PATH}")
         await asyncio.sleep(1.5)
 
         # 删除表单必须带着当前搜索上下文提交，先把目标行搜出来
