@@ -71,7 +71,7 @@ class Settings:
     sales_challenge_grace_seconds: float = 10.0
     soldeazy_base_url: str = "https://stiger.soldeazy.com"
     soldeazy_profile_dir: str = ""
-    soldeazy_headless: bool = False
+    soldeazy_headless: bool = True
     soldeazy_browser_channel: str = "chrome"
     soldeazy_navigation_timeout: float = 45.0
     soldeazy_min_delay: float = 2.0
@@ -137,7 +137,7 @@ class Settings:
                     _default_data_dir() / "profiles" / "soldeazy",
                 )
             ).strip(),
-            soldeazy_headless=_env_bool("SOLDEAZY_HEADLESS", False),
+            soldeazy_headless=_env_bool("SOLDEAZY_HEADLESS", True),
             soldeazy_browser_channel=str(
                 _env("SOLDEAZY_BROWSER_CHANNEL", "chrome")
             ).strip(),

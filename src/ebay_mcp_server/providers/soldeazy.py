@@ -91,6 +91,11 @@ SELECTORS: dict[str, Locator] = {
     "login_user": Locator("输入框_login_user", '//form//input[@type="text"]', "input[name=login_user]"),
     "login_pass": Locator("密码框", '//form//input[@type="password"]', "input[name=login_pass]"),
     "login_submit": Locator("Login", '//form//button[@type="submit"]', "form button[type=submit]"),
+    "login_remember": Locator(
+        "记住用户名",
+        '//form//input[@type="checkbox"]',
+        "input[name=login_remember_username]",
+    ),
     "ad_popup": Locator("soldeazy-广告弹框", '//div[@class="fancybox-skin"]', ".fancybox-skin"),
     "ad_dismiss": Locator(
         "弹框-(不再显示此消息)",
@@ -219,27 +224,56 @@ class SoldeazyBrowser:
             args=["--disable-blink-features=AutomationControlled"],
             locale="zh-CN",
         )
+        await self._restore_session()
         pages = self._context.pages
         self._page = pages[0] if pages else await self._context.new_page()
         self._page.set_default_timeout(self.settings.soldeazy_navigation_timeout * 1000)
         return self._page
 
+    def _session_file(self) -> Path:
+        return self.profile_dir / "session_cookies.json"
+
+    async def _save_session(self) -> None:
+        """把 cookie 落盘（含会话级 _ht_ses_），重启后仍能复用登录态。"""
+
+        if self._context is None:
+            return
+        try:
+            cookies = await self._context.cookies()
+            self._session_file().write_text(
+                json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:  # noqa: BLE001 - 落盘失败不影响主流程
+            pass
+
+    async def _restore_session(self) -> None:
+        path = self._session_file()
+        if self._context is None or not path.exists():
+            return
+        try:
+            cookies = json.loads(path.read_text(encoding="utf-8"))
+            if cookies:
+                await self._context.add_cookies(cookies)
+        except Exception:  # noqa: BLE001 - 文件坏了就当没有
+            pass
+
     async def close(self) -> None:
         if self._context is not None:
+            await self._save_session()
             await self._context.close()
         if self._playwright is not None:
             await self._playwright.stop()
         self._context = self._page = self._playwright = None
 
     # ---------- 基础动作 ----------
-    async def _locate(self, key: str) -> Any:
+    async def _locate(self, key: str, timeout: int = 8000) -> Any:
         page = await self._ensure_page()
         entry = SELECTORS[key]
         last: Exception | None = None
         for selector in entry.candidates():
             try:
                 locator = page.locator(selector).first
-                await locator.wait_for(state="visible", timeout=8000)
+                await locator.wait_for(state="visible", timeout=timeout)
                 return locator
             except Exception as exc:  # noqa: BLE001 - 逐个候选试探
                 last = exc
@@ -261,8 +295,34 @@ class SoldeazyBrowser:
                 continue
 
     # ---------- 登录 ----------
+    async def _session_alive(self) -> bool:
+        """用现有 cookie 探一下列表页；不碰登录框，也不触发登录。"""
+
+        page = await self._ensure_page()
+        try:
+            await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+            await asyncio.sleep(1.0)
+        except Exception:  # noqa: BLE001 - 网络问题交给上层重试
+            return False
+        if "/login" in (page.url or "").lower():
+            return False
+        return await page.evaluate(
+            "() => !!document.querySelector('select') || !!document.querySelector('#tbl_dSheet')"
+        )
+
     async def interactive_login(self) -> dict[str, Any]:
         page = await self._ensure_page()
+
+        # 先探活：cookie 还有效就直接复用，连登录页都不打开
+        if await self._session_alive():
+            await self._dismiss_popup()
+            return {
+                "success": True,
+                "reused_session": True,
+                "url": page.url,
+                "profile_dir": str(self.profile_dir),
+            }
+
         await page.goto(f"{self.base_url}{LOGIN_PATH}", wait_until="domcontentloaded")
         await asyncio.sleep(2)
         await self._dismiss_popup()
@@ -283,6 +343,13 @@ class SoldeazyBrowser:
         if username and password:
             await (await self._locate("login_user")).fill(username)
             await (await self._locate("login_pass")).fill(password)
+            # 「记住用户名」不勾，登录态撑不过一次重启——这是会话丢失的根因
+            try:
+                remember = await self._locate("login_remember", timeout=3000)
+                if not await remember.is_checked():
+                    await remember.check(timeout=3000)
+            except Exception:  # noqa: BLE001 - 没有这个勾选框就照常登录
+                pass
             await (await self._locate("login_submit")).click()
         else:
             # 无凭据时留给人工，但别干等十分钟：120 秒没登上就直接报错
@@ -292,6 +359,7 @@ class SoldeazyBrowser:
         await self._wait_logged_in(page, self.settings.soldeazy_navigation_timeout * 2)
         await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
         await self._dismiss_popup()
+        await self._save_session()
         return {"success": True, "url": page.url, "profile_dir": str(self.profile_dir)}
 
     async def _wait_logged_in(self, page: Any, timeout_seconds: float) -> None:
@@ -396,6 +464,19 @@ class SoldeazyBrowser:
             .filter(o => o.id && o.name);
         }
         """)
+        if not options:
+            # 可能停在登录页：确保登录后再读一次
+            await self.interactive_login()
+            options = await page.evaluate("""
+            () => {
+              const sel = Array.from(document.querySelectorAll('select'))
+                .find(x => x.name === 'listshop[]');
+              if (!sel) return [];
+              return Array.from(sel.options)
+                .map(o => ({id: o.value, name: o.textContent.trim()}))
+                .filter(o => o.id && o.name);
+            }
+            """)
         return options
 
     async def switch_shop(self, shop: str) -> dict[str, str]:
@@ -808,6 +889,167 @@ class SoldeazyBrowser:
             "real_name": body.get("real_name"),
             "gallery_type": body.get("gallery_type"),
         }
+
+    async def _open_edit(self, rowid: str) -> Any:
+        """打开某条数据表的编辑表单（POST table_action=edit）。"""
+
+        page = await self._ensure_page()
+        await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
+        await asyncio.sleep(1.5)
+        await page.evaluate(
+            """
+            (rowid) => {
+              const f = document.createElement('form');
+              f.method = 'POST';
+              f.action = '/app/soldeazy/datasheet';
+              const add = (n, v) => {
+                const i = document.createElement('input');
+                i.type = 'hidden'; i.name = n; i.value = v;
+                f.appendChild(i);
+              };
+              add('mode', 'dsheet_datatable');
+              add('table_action', 'edit');
+              add('table_row_id', rowid);
+              document.body.appendChild(f);
+              f.submit();
+            }
+            """,
+            str(rowid),
+        )
+        await page.wait_for_load_state("domcontentloaded")
+        # 明细字段是页面加载后由脚本渲染的，等它出现再继续
+        try:
+            await page.wait_for_selector(
+                'input[name="dsku_price[]"], input[name="dsku_qty[]"]', timeout=20_000
+            )
+        except Exception:  # noqa: BLE001 - 没有明细字段时也要继续（例如新建页）
+            pass
+        await asyncio.sleep(1.0)
+        return page
+
+    async def apply_datasheet_changes(
+        self, rowid: str, changes: Sequence[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """把一组字段改动写进同一个数据表并保存（一次表单提交，原子）。
+
+        ``changes`` 每项：``{"sku": 子体SKU, "field": "price"|"qty", "new": 数值}``。
+        多变体表按 ``dsku_product_code[]`` 的下标对齐，写对应下标的价格/数量。
+        """
+
+        page = await self._open_edit(rowid)
+        result = await page.evaluate(
+            """
+            (changes) => {
+              const arr = (name) =>
+                Array.from(document.querySelectorAll('[name="' + name + '"]'));
+              const codes = arr('dsku_product_code[]').map(el => (el.value || '').trim());
+              const applied = [];
+              const failed = [];
+              for (const ch of changes) {
+                let index = codes.indexOf(String(ch.sku).trim());
+                if (index < 0 && codes.length === 1) index = 0;
+                if (index < 0) {
+                  failed.push({...ch, reason: '这个数据表里没有该 SKU', available: codes});
+                  continue;
+                }
+                const field = ch.field === 'price' ? 'dsku_price[]' : 'dsku_qty[]';
+                const target = arr(field)[index];
+                if (!target) {
+                  failed.push({...ch, reason: '找不到字段 ' + field});
+                  continue;
+                }
+                target.value = ch.new;
+                target.dispatchEvent(new Event('input', {bubbles: true}));
+                target.dispatchEvent(new Event('change', {bubbles: true}));
+                applied.push({...ch, index: index});
+              }
+              return {applied: applied, failed: failed, codes: codes};
+            }
+            """,
+            list(changes),
+        )
+
+        if not result["applied"]:
+            return {
+                "success": False,
+                "rowid": str(rowid),
+                "applied": [],
+                "failed": result["failed"],
+                "notice": "",
+            }
+
+        await asyncio.sleep(0.5)
+        clicked = await page.evaluate(
+            """
+            () => {
+              const btns = Array.from(document.querySelectorAll('button,input[type=button],a'))
+                .filter(el => el.offsetParent);
+              const hit = btns.find(b => (b.value || b.innerText || '').trim() === '储存');
+              if (!hit) return null;
+              hit.click();
+              return '储存';
+            }
+            """
+        )
+        await asyncio.sleep(5)
+        notice = await page.evaluate(
+            """
+            () => {
+              const el = document.querySelector('[class*=ajax-error], [class*=error-msg], [class*=notice]');
+              return el && el.offsetParent ? (el.innerText || '').trim().slice(0, 200) : '';
+            }
+            """
+        )
+        # 页面提示不等于本次字段没写进去（例如"品类需要填写标准产品目录"与价格无关），
+        # 所以只当警告记下来；真正的成败由对账步骤判定。
+        return {
+            "success": clicked is not None and not result["failed"],
+            "rowid": str(rowid),
+            "applied": result["applied"],
+            "failed": result["failed"],
+            "warnings": [notice] if notice else [],
+        }
+
+    async def read_datasheet_values(
+        self, site: str = "US", query: str = "", *, search: bool = True
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """搜索并导出一次，返回 ``{(母体rowid, 子体SKU): {qty, price, parent, ...}}``。
+
+        子体行没有 Row ID，按"最近一个带 rowid 的行"归属。
+        """
+
+        from ebay_mcp_server.providers.soldeazy_workbook import read_matrix
+
+        if search:
+            await self.search(query, site)
+
+        page = await self._ensure_page()
+        workdir = Path(self.profile_dir).parent / "reconcile"
+        workdir.mkdir(parents=True, exist_ok=True)
+        target = workdir / f"state_{int(asyncio.get_running_loop().time())}.xlsx"
+        await self.export(target)
+
+        _sheet, matrix = read_matrix(target)
+        values: dict[tuple[str, str], dict[str, Any]] = {}
+        current = ""
+        parent = ""
+        for row in matrix[1:]:
+            rowid = str(row[0] or "").strip()
+            psku = str(row[2] or "").strip()
+            sku = str(row[3] or "").strip()
+            if rowid:
+                current = rowid
+                parent = psku
+            if not sku:
+                continue
+            values[(current, sku)] = {
+                "rowid": rowid,
+                "parent": parent,
+                "sku": sku,
+                "qty": row[4],
+                "price": row[5],
+            }
+        return values
 
     async def delete_datasheets(self, rowids: Sequence[str]) -> dict[str, Any]:
         """删除数据表（实测：整表单提交，不是 AJAX）。

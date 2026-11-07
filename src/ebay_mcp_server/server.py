@@ -1199,6 +1199,191 @@ async def soldeazy_upload_photo(
         )
 
 
+def _plan_dir() -> Path:
+    """不可变计划的存放目录（与 manifest 同级的 soldeazy-plans/）。"""
+
+    base = Path(settings.soldeazy_profile_dir or ".").expanduser().parent
+    return base / "soldeazy-plans"
+
+
+@mcp.tool(annotations=READ_ONLY_NETWORK)
+async def soldeazy_plan_changes(
+    kind: str,
+    site: str,
+    targets: dict[str, float],
+    shop: str = "",
+    supersedes: str = "",
+) -> dict[str, Any]:
+    """Draft a change plan (read-only): what would change, row by row.
+
+    ``kind`` is ``price`` or ``qty``. ``targets`` is ``{SKU: value}``:
+
+    * price → SKU is the **child** SKU; the price written is exactly this value;
+    * qty   → SKU is the **parent** SKU; every row under it gets this quantity.
+
+    Nothing is written. The plan stays a rewritable draft until
+    ``soldeazy_confirm_plan`` freezes it.
+    """
+
+    try:
+        from ebay_mcp_server.providers.soldeazy_apply import build_items, make_plan
+        from ebay_mcp_server.providers.soldeazy_plan import write_draft
+
+        if kind not in {"price", "qty"}:
+            raise EbayMcpError("SOLDEAZY_PLAN_KIND", "kind 只能是 price 或 qty。")
+        if not targets:
+            raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
+
+        picked = await _resolve_shop_id(shop)
+        live = await soldeazy.read_datasheet_values(site)
+        items, report = build_items(live, kind, targets)
+        plan = make_plan(kind, site, picked, items, supersedes=supersedes)
+        path = write_draft(_plan_dir(), plan)
+
+        return success(
+            "soldeazy_plan_changes",
+            "soldeazy",
+            {
+                "plan_id": plan.plan_id,
+                "path": str(path),
+                "kind": kind,
+                "site": site,
+                "shop": picked,
+                "rows_in_scope": len(live),
+                "planned_items": len(items),
+                "items": [item.as_dict() for item in items],
+                "missing": report["missing"],
+                "conflicts": report["conflicts"],
+                "next": "确认无误后调用 soldeazy_confirm_plan 冻结",
+            },
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_plan_changes", exc)
+    except Exception as exc:  # pragma: no cover - browser safety boundary
+        logger.exception("Unhandled Soldeazy plan error")
+        return tool_error(
+            "soldeazy_plan_changes",
+            EbayMcpError("SOLDEAZY_PLAN_ERROR", f"生成计划失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=LOCAL_SESSION_ACTION)
+async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
+    """Freeze a draft plan: write sha256, mark read-only, refuse further edits.
+
+    After this call the JSON can no longer be changed by any tool; execution
+    verifies the hash every time. If the content turns out wrong, draft a new
+    plan with ``supersedes`` and archive the old one.
+    """
+
+    try:
+        from ebay_mcp_server.providers.soldeazy_plan import freeze, load_raw
+
+        directory = _plan_dir()
+        path = directory / f"{plan_id}.json"
+        if not path.exists():
+            raise EbayMcpError("SOLDEAZY_PLAN_MISSING", f"找不到计划 {plan_id}")
+        raw = load_raw(path)
+        from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+        plan = ChangePlan(
+            plan_id=raw["plan_id"],
+            kind=raw["kind"],
+            site=raw.get("site", ""),
+            shop=raw.get("shop") or {},
+            created_at=raw.get("created_at", ""),
+            items=[PlanItem(**item) for item in raw.get("items", [])],
+            supersedes=raw.get("supersedes", ""),
+            note=raw.get("note", ""),
+        )
+        if not plan.items:
+            raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "计划里没有任何改动，不冻结。")
+        info = freeze(directory, plan)
+        return success("soldeazy_confirm_plan", "soldeazy", {**info, "plan_id": plan_id})
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_confirm_plan", exc)
+    except Exception as exc:
+        logger.exception("Unhandled Soldeazy confirm error")
+        return tool_error(
+            "soldeazy_confirm_plan",
+            EbayMcpError("SOLDEAZY_CONFIRM_ERROR", str(exc)[:200]),
+        )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_apply_plan(plan_id: str, dry_run: bool = True) -> dict[str, Any]:
+    """Execute a frozen plan through the save API, one datasheet per submit.
+
+    The plan file is never modified; every attempt is appended to an audit log.
+    ``dry_run`` defaults to true: it verifies the hash and reports scope only.
+    """
+
+    try:
+        from ebay_mcp_server.providers.soldeazy_apply import apply_plan
+        from ebay_mcp_server.providers.soldeazy_plan import load_verified
+
+        directory = _plan_dir()
+        plan, digest = load_verified(directory, plan_id)
+
+        scope = {
+            "plan_id": plan_id,
+            "sha256": digest,
+            "kind": plan.kind,
+            "site": plan.site,
+            "shop": plan.shop,
+            "items": len(plan.items),
+            "datasheets": len({item.rowid for item in plan.items}),
+        }
+        if dry_run:
+            return success("soldeazy_apply_plan", "soldeazy", {**scope, "dry_run": True})
+
+        _require_write_enabled()
+        result = await apply_plan(soldeazy, plan, directory)
+        return success(
+            "soldeazy_apply_plan",
+            "soldeazy",
+            {**scope, **result, "dry_run": False, "next": "调用 soldeazy_reconcile_plan 对账"},
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_apply_plan", exc)
+    except Exception as exc:
+        logger.exception("Unhandled Soldeazy apply error")
+        return tool_error(
+            "soldeazy_apply_plan",
+            EbayMcpError("SOLDEAZY_APPLY_ERROR", str(exc)[:200]),
+        )
+
+
+@mcp.tool(annotations=READ_ONLY_NETWORK)
+async def soldeazy_reconcile_plan(plan_id: str) -> dict[str, Any]:
+    """Compare the live values against a frozen plan and write a report file.
+
+    The report is a new file (``<plan_id>.reconcile.json``); the plan itself is
+    untouched and stays the single source of what was intended.
+    """
+
+    try:
+        from ebay_mcp_server.providers.soldeazy_apply import reconcile
+        from ebay_mcp_server.providers.soldeazy_plan import load_verified
+
+        directory = _plan_dir()
+        plan, digest = load_verified(directory, plan_id)
+        report = await reconcile(soldeazy, plan, directory)
+        return success(
+            "soldeazy_reconcile_plan",
+            "soldeazy",
+            {**report, "sha256": digest},
+        )
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_reconcile_plan", exc)
+    except Exception as exc:
+        logger.exception("Unhandled Soldeazy reconcile error")
+        return tool_error(
+            "soldeazy_reconcile_plan",
+            EbayMcpError("SOLDEAZY_RECONCILE_ERROR", str(exc)[:200]),
+        )
+
+
 @mcp.tool(annotations=READ_ONLY_LOCAL)
 async def soldeazy_change_history(
     limit: int = 20,
