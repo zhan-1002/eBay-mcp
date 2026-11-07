@@ -69,6 +69,18 @@ class Settings:
     sales_min_delay: float = 2.0
     sales_manual_recovery_timeout: float = 900.0
     sales_challenge_grace_seconds: float = 10.0
+    soldeazy_base_url: str = "https://stiger.soldeazy.com"
+    soldeazy_profile_dir: str = ""
+    soldeazy_headless: bool = True
+    soldeazy_export_channel: str = "page"
+    soldeazy_browser_channel: str = "chrome"
+    soldeazy_navigation_timeout: float = 45.0
+    soldeazy_min_delay: float = 2.0
+    soldeazy_username: str = ""
+    soldeazy_password: str = ""
+    soldeazy_write_enabled: bool = False
+    soldeazy_export_profile: str = "55"
+    soldeazy_manifest_path: str = ""
 
     @classmethod
     def load(cls) -> Settings:
@@ -117,6 +129,31 @@ class Settings:
                 0.0,
                 min(float(_env("EBAY_SALES_CHALLENGE_GRACE_SECONDS", "10")), 60.0),
             ),
+            soldeazy_base_url=str(
+                _env("SOLDEAZY_BASE_URL", "https://stiger.soldeazy.com")
+            ).strip(),
+            soldeazy_profile_dir=str(
+                _env(
+                    "SOLDEAZY_PROFILE_DIR",
+                    _default_data_dir() / "profiles" / "soldeazy",
+                )
+            ).strip(),
+            soldeazy_headless=_env_bool("SOLDEAZY_HEADLESS", True),
+        soldeazy_export_channel=str(_env("SOLDEAZY_EXPORT_CHANNEL", "page")).strip() or "page",
+            soldeazy_browser_channel=str(
+                _env("SOLDEAZY_BROWSER_CHANNEL", "chrome")
+            ).strip(),
+            soldeazy_navigation_timeout=max(
+                5.0, min(float(_env("SOLDEAZY_NAVIGATION_TIMEOUT", "45")), 180.0)
+            ),
+            soldeazy_min_delay=max(
+                0.0, min(float(_env("SOLDEAZY_MIN_DELAY", "2")), 60.0)
+            ),
+            soldeazy_username=str(_env("SOLDEAZY_USERNAME", "")).strip(),
+            soldeazy_password=str(_env("SOLDEAZY_PASSWORD", "")).strip(),
+            soldeazy_write_enabled=_env_bool("SOLDEAZY_WRITE_ENABLED", False),
+            soldeazy_export_profile=str(_env("SOLDEAZY_EXPORT_PROFILE", "55")).strip(),
+            soldeazy_manifest_path=str(_env("SOLDEAZY_MANIFEST_PATH", "")).strip(),
         )
 
     @property
@@ -149,6 +186,12 @@ class Settings:
                 self.sales_manual_recovery_timeout
             ),
             "sales_challenge_grace_seconds": self.sales_challenge_grace_seconds,
+            "soldeazy_base_url": self.soldeazy_base_url,
+            "soldeazy_browser_configured": bool(self.soldeazy_profile_dir),
+            "soldeazy_write_enabled": self.soldeazy_write_enabled,
+            "soldeazy_credentials_configured": bool(
+                self.soldeazy_username and self.soldeazy_password
+            ),
             "request_timeout_seconds": self.request_timeout,
             "max_retries": self.max_retries,
         }

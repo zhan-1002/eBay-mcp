@@ -25,3 +25,8 @@ archive/02_soldeazy详情补数/脚本/config.json
 sales-profile/
 *.xlsx
 !archive/文档/**
+.live/
+.live-probe/
+.live-verify/
+.live-*/
+pytest-of-*/

@@ -20,9 +20,29 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "ebay_read_skill",
         "ebay_validate_titles",
         "ebay_get_sales_history",
+        "soldeazy_status",
+        "soldeazy_open_login",
+        "soldeazy_search_datasheet",
+        "soldeazy_preview_price_change",
+        "soldeazy_stock_template",
+        "soldeazy_change_history",
+        "soldeazy_list_shops",
+        "soldeazy_switch_shop",
+        "soldeazy_create_datasheet",
+        "soldeazy_delete_datasheet",
+        "soldeazy_upload_photo",
+        "soldeazy_plan_changes",
+        "soldeazy_confirm_plan",
+        "soldeazy_apply_plan",
+        "soldeazy_reconcile_plan",
+        "soldeazy_preview_stock_change",
+        "soldeazy_update_price",
+        "soldeazy_update_stock",
     } <= tools
-    assert len(tools) == 14
+    assert len(tools) == 32
     assert not any("recall" in name or "selection" in name for name in tools)
+    # 写工具已注册但默认关闭：没有 SOLDEAZY_WRITE_ENABLED 时一律拒绝
+    assert {"soldeazy_update_price", "soldeazy_update_stock"} <= tools
     assert len(server.mcp._resource_manager._resources) == 7
 
 
@@ -65,3 +85,56 @@ async def test_title_validator_tool_uses_local_contract():
     result = await server.ebay_validate_titles(titles)
     assert result["success"] is True
     assert result["data"]["valid_for_delivery"] is True
+
+@pytest.mark.asyncio
+async def test_write_tools_fail_closed_when_the_flag_is_off():
+    for tool in (server.soldeazy_update_price, server.soldeazy_update_stock):
+        result = await tool("any-token")
+        assert result["success"] is False
+        assert result["error"]["code"] == "SOLDEAZY_WRITE_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_write_tool_rejects_an_unknown_token_even_when_enabled(monkeypatch):
+    import dataclasses
+
+    monkeypatch.setattr(
+        server, "settings", dataclasses.replace(server.settings, soldeazy_write_enabled=True)
+    )
+    result = await server.soldeazy_update_price("not-a-real-token")
+    assert result["success"] is False
+    assert result["error"]["code"] == "SOLDEAZY_TOKEN_INVALID"
+
+
+def test_write_tool_defaults_to_dry_run():
+    import inspect
+
+    signature = inspect.signature(server.soldeazy_update_price)
+    assert signature.parameters["dry_run"].default is True
+    signature = inspect.signature(server.soldeazy_update_stock)
+    assert signature.parameters["dry_run"].default is True
+
+def test_shop_scope_collects_distinct_shops():
+    found = {
+        "rows": [
+            {"shop": "EBAY FUN"},
+            {"shop": "EBAY FUN"},
+            {"shop": "EBAY LT"},
+            {"shop": None},
+            {"shop": "  "},
+        ]
+    }
+    assert server._shop_scope(found) == ["EBAY FUN", "EBAY LT"]
+    assert server._shop_scope({}) == []
+    assert server._shop_scope({"rows": []}) == []
+
+
+def test_new_write_tools_default_to_dry_run():
+    import inspect
+
+    for tool in (
+        server.soldeazy_create_datasheet,
+        server.soldeazy_delete_datasheet,
+        server.soldeazy_upload_photo,
+    ):
+        assert inspect.signature(tool).parameters["dry_run"].default is True

@@ -2,10 +2,15 @@
 
 通用 eBay Model Context Protocol 服务。它负责认证、调用、分页、字段透传、
 限流重试和稳定错误结构，不包含选品、关键词扩展、商品评分或推荐逻辑。
+同时内置 Soldeazy 数据表读写链路（改价 / 改库存 / 创建 / 删除 / 图片 / 同步）。
 
 当前版本：`0.1.0` 基础骨架。
 
 ## 当前工具
+
+共 **32 个**：21 个只读、5 个本地动作、6 个远端写。
+
+### eBay 官方 API
 
 - `ebay_get_capabilities`：查看环境、Marketplace 和可用能力，不返回凭据。
 - `ebay_search_items`：官方 Browse API 搜索与分页。
@@ -16,13 +21,98 @@
 - `ebay_get_seller_feedback`：官方卖家反馈记录；不等同于完整销量。
 - `ebay_translate_text`：官方 Translation API。
 - `ebay_get_rate_limits`：应用实际 API 配额。
-- `ebay_sales_provider_status`：购买记录 Provider 与本地浏览器会话状态。
-- `ebay_sales_open_login`：由 MCP 打开并持续持有人工登录窗口。
 - `ebay_read_skill`：为尚未支持 Skills 扩展的客户端读取 Skill。
 - `ebay_validate_titles`：机械校验 30 条 eBay 英文标题。
+
+### 购买记录
+
+- `ebay_sales_provider_status`：购买记录 Provider 与本地浏览器会话状态。
+- `ebay_sales_open_login`：由 MCP 打开并持续持有人工登录窗口。
 - `ebay_get_sales_history`：按传统数字 itemId 采集购买记录明细。销量数据是每一笔成交，不是官方已售总数。
 
-共 13 个只读工具和 1 个本地会话工具，当前不注册任何 eBay 写工具。
+### Soldeazy 只读
+
+- `soldeazy_status`：浏览器 profile、凭据与写工具开关状态。
+- `soldeazy_search_datasheet`：按站点 + SKU 通配串读取数据表行（Row ID / 母体 / SKU / 价格 / 运费 / 数量）。
+- `soldeazy_list_shops`：列出当前登录可操作的渠道账号（店铺），返回 id 与简称。
+- `soldeazy_plan_changes`：读线上现状 → 生成**改动计划草稿**（JSON），返回 `plan_id`。
+- `soldeazy_reconcile_plan`：把线上实际值与已冻结计划逐条比对，输出对账报告。
+- `soldeazy_stock_template`：生成运营手填的库存表模板。
+- `soldeazy_change_history`：读本地变更清单，新的在前。
+
+### Soldeazy 本地动作
+
+- `soldeazy_open_login`：打开登录页并保留会话（有 cookie 时直接复用，不再登录）。
+- `soldeazy_switch_shop`：切换当前渠道账号，后续调用默认用它。
+- `soldeazy_confirm_plan`：**冻结计划**——写 sha256、文件设只读，此后任何工具都不得修改。
+
+### Soldeazy 远端写（默认关闭）
+
+- `soldeazy_preview_price_change` / `soldeazy_preview_stock_change`：旧版预览入口，返回 `confirm_token`。
+- `soldeazy_update_price` / `soldeazy_update_stock`：旧版写入入口，凭令牌上传并 BULK SYNC。
+- `soldeazy_apply_plan`：**执行已冻结计划**——导出 → 批量改 → 一次上传 → 工序核对。
+- `soldeazy_create_datasheet`：创建数据表（从刊登复制，或从0建空表并填内容）。
+- `soldeazy_delete_datasheet`：按 Row ID 删除数据表。
+- `soldeazy_upload_photo`：上传产品图片（文件直传）或用可访问的图片 URL 热链。
+
+写工具默认关闭：没有 `SOLDEAZY_WRITE_ENABLED=1` 一律拒绝。
+
+## Soldeazy 写入链路（已实机验收）
+
+Soldeazy 没有公开接口文档，生产链路是「导出 xlsx → 离线改 → 上传 → BULK SYNC」
+（影刀应用 `soldeazy批量改价`）。本服务按抓包得到的真实接口复刻，**不点页面按钮**。
+
+一次改动的完整生命周期：
+
+```
+① 起草  soldeazy_plan_changes(kind, site, targets)
+        └ 读当前值 → 逐条算出 old/new → 写 plan.json（status=draft，可反复重生成）
+
+② 确认  soldeazy_confirm_plan(plan_id)
+        └ 写 sha256 旁车 + 文件设只读 → 此后任何程序不得修改
+        └ 要改就另起一份新计划（supersedes 指向旧的），旧计划归档 archive/
+
+③ 执行  soldeazy_apply_plan(plan_id, dry_run=False)
+        └ 校验哈希 → 导出（1 次）→ 批量改单元格 → 上传（1 次）
+        └ 整个计划固定 2 次请求，与条数无关
+        └ 上传后自动核对「工序管理」任务：条数必须等于计划、零失败、逐行成功
+
+④ 对账  soldeazy_reconcile_plan(plan_id)
+        └ 轮询导出实际值，与计划的 new 逐条比对，结果写 <plan_id>.reconcile.json
+```
+
+### 业务规则（2026-11-07 用户纠正后）
+
+- **改价**：给的是**子体 SKU** 和确切价格，写进去就是这个价。
+  不推断件数、不算最低售价、不减邮费、不做"只涨不降"。
+  精确匹配不到时才退化成前缀匹配；前缀命中多个子体时报冲突、**不猜**。
+- **改库存**：给的是**母体 SKU**，命中的是它下面**全部行**（母体行 + 所有子体行）。
+  实测：只写母体行，子体不会跟随，所以必须逐行写。
+  数量是绝对值，不做打包换算。
+- 上传只允许落在 **E(数量) / F(价格)** 两列，文件写回后逐格自检，出现其它列差异即拒绝上传。
+
+### 三个必须记住的坑
+
+1. **导出文件有两行表头**（技术表头 + 显示表头）。裁剪上传文件时必须两行都保留，
+   否则平台会把第一条数据当表头吃掉，少处理一个数据表，且不报错。
+2. **导出接口是 `table_action=bulk-export` + `mode=dsheet_datatable`**，
+   不是搜索用的 `show` + `dsheet_list`。
+3. **整份导出上传会 revise 文件里的每一行**。所以上传文件必须收窄到计划涉及的
+   数据表，否则会把没打算动的行覆盖成导出时的旧值。
+
+### 运行形态
+
+| 项 | 默认 | 说明 |
+|---|---|---|
+| `SOLDEAZY_HEADLESS` | `1`（无头） | 日常零窗口；只有首次登录需要人工时才开有头 |
+| `SOLDEAZY_EXPORT_CHANNEL` | `page` | 可切 `cookie`，两者输出逐格一致（已验收） |
+| 登录态 | cookie 落盘 | 登录时勾「记住用户名」，cookie 存 `session_cookies.json`（含会话级），重启可复用 |
+
+### 库存表约定（运营手填，可选）
+
+`库存更新.xlsx`，工作表名 `库存`，第 1 行表头 `SKU | 库存 | 备注`。
+也可以直接调 `soldeazy_plan_changes(kind="qty", targets={SKU: 数量})`，不必经过 Excel。
+
 
 ## Skills 与 Resources
 
@@ -49,11 +139,15 @@
 ```powershell
 Copy-Item .env.example .env
 # 编辑 .env，填写 EBAY_CLIENT_ID / EBAY_CLIENT_SECRET
+# Soldeazy 另需 SOLDEAZY_USERNAME / SOLDEAZY_PASSWORD
 
-uv sync --extra dev
+uv sync --extra dev --extra soldeazy
 uv run ebay-mcp-server
 uv run pytest
 ```
+
+Soldeazy 首次运行会做一次登录（默认无头，凭据来自 `.env`），之后 cookie 落盘复用，
+不再重复登录。需要人工介入时设 `SOLDEAZY_HEADLESS=0` 开窗口。
 
 仓库根目录提供 `.mcp.json`。WorkBuddy 1.2.3 实测使用 MCP `2025-06-18`
 和 stdio 传输，可把同样的 `uv run ebay-mcp-server` 命令加入其 MCP 配置。
@@ -125,16 +219,37 @@ src/ebay_mcp_server/
   providers/sales.py     非公开销量数据源的可插拔接口
   providers/purchase_history.py
                          持久化浏览器、购买记录解析与汇总
+  providers/soldeazy.py  Soldeazy 浏览器：搜索/导出/上传/同步/创建/删除/图片/工序
+  providers/soldeazy_plan.py
+                         不可变改动计划：草稿 → 冻结 → 校验 → 归档
+  providers/soldeazy_apply.py
+                         计划执行（批量上传）与对账
+  providers/soldeazy_workbook.py
+                         导出表改写与上传前逐格自检
+  providers/soldeazy_pricing.py
+                         旧版算价内核（预览工具仍在用）
+  providers/soldeazy_stock.py
+                         运营库存表约定与解析
+  providers/soldeazy_write.py
+                         旧版写入令牌与漂移检查
   sales_login.py         独立 Profile 的人工登录入口
   skills/*/SKILL.md      7 个可发现的工作流 Skill
   skill_registry.py      Skill 清单、摘要与安全资源读取
   title_validation.py    标题机械校验
   contracts.py           Marketplace 与统一响应
-tests/                   离线契约测试
+tests/                   离线契约测试（158 项）
 ```
 
 设计和非公开数据源边界见
 [`docs/ebay-mcp-architecture.md`](docs/ebay-mcp-architecture.md)。
+
+Soldeazy 相关文档：
+
+- [`docs/soldeazy-写入链路架构.md`](docs/soldeazy-写入链路架构.md) — 计划生命周期与对账保证
+- [`docs/soldeazy-创建与图片-接口说明.md`](docs/soldeazy-创建与图片-接口说明.md) — 创建/保存/删除/图片接口
+- [`docs/soldeazy-验收清单.md`](docs/soldeazy-验收清单.md) — A–F 六组验收项及结果
+- [`docs/待确认清单-影刀改价.md`](docs/待确认清单-影刀改价.md) — 与影刀原流程的差异确认记录
+
 店铺监控、竞品对比、销量趋势和预警系统的可选路线图见
 [`TODO.md`](TODO.md)。
 
