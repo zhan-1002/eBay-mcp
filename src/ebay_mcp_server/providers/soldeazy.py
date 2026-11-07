@@ -176,6 +176,8 @@ class SoldeazyBrowser:
         self._page: Any = None
         self._lock = asyncio.Lock()
         self.active_shop: dict[str, str] | None = None
+        self._last_query: str = ""
+        self._last_site: str = ""
 
     # ---------- 生命周期 ----------
     @property
@@ -377,6 +379,8 @@ class SoldeazyBrowser:
     async def search(self, sku_terms: str, site: str, shop: str = "") -> dict[str, Any]:
         """Search one site by a space-joined SKU string and read the results."""
 
+        self._last_query = sku_terms or ""
+        self._last_site = site or ""
         async with self._lock:
             page = await self._ensure_page()
             await page.goto(f"{self.base_url}{LIST_PATH}", wait_until="domcontentloaded")
@@ -567,7 +571,59 @@ class SoldeazyBrowser:
             ) from exc
 
     # ---------- 导出 / 上传 / 同步（需真机验证） ----------
+    async def export_via_api(self, dest: Path, *, profile: str = "55") -> dict[str, Any]:
+        """不导航页面，直接用会话 cookie 提交导出表单。
+
+        **待实机验证**：表单字段取自 2026-11-07 抓包（`bulk_option=whole_result`
+        + `listExppf=55` + `listExpfmt=xlsx`）。验证通过前不要作为默认通道，
+        现有的 `export()` 仍然走页面。
+        """
+
+        page = await self._ensure_page()
+        shop_id = (self.active_shop or {}).get("id", "")
+        site_code = SITE_CODES.get((self._last_site or "").upper(), "")
+        form = {
+            "table_action": "show",
+            "mode": "dsheet_list",
+            "second_mode": "dsheet_list",
+            "txtproductcode": self._last_query,
+            "listshop[]": shop_id,
+            "listsite": site_code,
+            "listdate": "month",
+            "view_profile_id": "Default",
+            "radioEditTypeValue": "schedule",
+            "bulk_option": "whole_result",
+            "bulk_option_from": "1",
+            "bulk_option_to": "1",
+            "listExppf": profile,
+            "listExpfmt": "xlsx",
+        }
+        response = await page.context.request.post(
+            f"{self.base_url}/app/soldeazy/datasheet", form=form, timeout=180_000
+        )
+        body = await response.body()
+        if not body or body[:2] != b"PK":
+            raise EbayMcpError(
+                "SOLDEAZY_EXPORT_API_FAILED",
+                "cookie 导出没有返回 xlsx",
+                details={"status": response.status, "head": body[:120].decode("utf-8", "ignore")},
+            )
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(body)
+        return {"path": str(dest), "size": len(body), "channel": "cookie"}
+
     async def export(self, dest: Path) -> dict[str, Any]:
+        """导出明细。通道由 `SOLDEAZY_EXPORT_CHANNEL` 决定：
+
+        - `page`（默认）：走页面表单，已长期验证；
+        - `cookie`：纯会话请求，待实机验证后再切默认。
+        """
+
+        if (self.settings.soldeazy_export_channel or "page").lower() == "cookie":
+            return await self.export_via_api(dest)
+        return await self._export_via_page(dest)
+
+    async def _export_via_page(self, dest: Path) -> dict[str, Any]:
         """导出当前搜索结果（导出档案 quanty &price&postage，xlsx）。
 
         实测：点「导出 Excel」后表单 POST 到新标签页直接下载；导出档案为空时
@@ -930,7 +986,10 @@ class SoldeazyBrowser:
     async def apply_datasheet_changes(
         self, rowid: str, changes: Sequence[dict[str, Any]]
     ) -> dict[str, Any]:
-        """把一组字段改动写进同一个数据表并保存（一次表单提交，原子）。
+        """【已封存，不用于计划执行】把一组字段改动写进同一条数据表并保存。
+
+        2026-11-07 起计划执行统一走「导出→批量改→一次上传」，
+        这个逐条通道只在需要单独修一条记录时才会用到。
 
         ``changes`` 每项：``{"sku": 子体SKU, "field": "price"|"qty", "new": 数值}``。
         多变体表按 ``dsku_product_code[]`` 的下标对齐，写对应下标的价格/数量。

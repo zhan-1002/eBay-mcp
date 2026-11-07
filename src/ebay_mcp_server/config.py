@@ -72,6 +72,7 @@ class Settings:
     soldeazy_base_url: str = "https://stiger.soldeazy.com"
     soldeazy_profile_dir: str = ""
     soldeazy_headless: bool = True
+    soldeazy_export_channel: str = "page"
     soldeazy_browser_channel: str = "chrome"
     soldeazy_navigation_timeout: float = 45.0
     soldeazy_min_delay: float = 2.0
@@ -138,6 +139,7 @@ class Settings:
                 )
             ).strip(),
             soldeazy_headless=_env_bool("SOLDEAZY_HEADLESS", True),
+        soldeazy_export_channel=str(_env("SOLDEAZY_EXPORT_CHANNEL", "page")).strip() or "page",
             soldeazy_browser_channel=str(
                 _env("SOLDEAZY_BROWSER_CHANNEL", "chrome")
             ).strip(),
