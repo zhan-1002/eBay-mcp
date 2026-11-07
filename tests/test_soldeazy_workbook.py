@@ -9,8 +9,11 @@ from ebay_mcp_server.providers.soldeazy_workbook import (
     UnsafeUpload,
     apply_changes,
     assert_only_editable,
+    build_upload_file,
     changed_columns,
     column_letter,
+    header_row_count,
+    read_matrix,
     diff_matrices,
     field_column,
 )
@@ -89,3 +92,41 @@ def test_assert_only_editable_names_the_offending_columns() -> None:
 
 def test_empty_change_list_produces_no_diff() -> None:
     assert diff_matrices(SHEET, apply_changes(SHEET, [])) == []
+
+
+def test_header_row_count_handles_two_header_rows() -> None:
+    matrix = [
+        ["dsheet_row_id", "dsheet_shop_initial", "dsheet_var_parent_sku"],
+        ["Row ID", "Sales channel", "P.SKU"],
+        ["4512957", "FUN", "JJPC0029"],
+    ]
+    assert header_row_count(matrix) == 2
+
+
+def test_trimmed_file_keeps_both_header_rows(tmp_path) -> None:
+    from openpyxl import Workbook
+
+    src = tmp_path / "export.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Worksheet"
+    ws.append(["dsheet_row_id", "dsheet_shop_initial", "dsheet_var_parent_sku",
+               "dsheet_product_code", "dsheet_qty", "dsheet_price",
+               "dsheet_first_post", "dsheet_EOF"])
+    ws.append(["Row ID", "Sales channel", "P.SKU", "SKU", "Qty", "Price", "Post.D.", "dsheet_EOF"])
+    ws.append(["4512957", "FUN", "JJPC0029", "JJPC0029", "100", "21.90", "0", "0"])
+    ws.append(["4512958", "FUN", "JJPC0029", "JJPC0029", "100", "21.90", "0", "0"])
+    ws.append(["4522717", "FUN", "排插-P", "JJPC0028", "100", "17.99", "0", "0"])
+    wb.save(src)
+    wb.close()
+
+    dst = tmp_path / "done.xlsx"
+    report = build_upload_file(src, dst, [("price", 3, 22.5)], keep_rows=[3])
+
+    _name, written = read_matrix(dst)
+    assert len(written) == 3, written
+    assert str(written[0][0]) == "dsheet_row_id"
+    assert str(written[1][0]) == "Row ID"        # 显示表头保留
+    assert str(written[2][0]) == "4512957"       # 数据行紧随其后
+    assert float(written[2][5]) == 22.5
+    assert report["rows"] == 1

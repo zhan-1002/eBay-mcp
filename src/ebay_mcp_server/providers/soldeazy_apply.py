@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,10 +136,13 @@ def index_rows(matrix: list[list[Any]]) -> dict[tuple[str, str], int]:
     子体行没有 Row ID，归属到最近一个带 rowid 的行。
     """
 
+    from ebay_mcp_server.providers.soldeazy_workbook import header_row_count
+
     index: dict[tuple[str, str], int] = {}
     current = ""
+    header = header_row_count(matrix)
     for number, row in enumerate(matrix, start=1):
-        if number == 1:
+        if number <= header:
             continue
         rowid = str(row[0] or "").strip()
         sku = str(row[3] or "").strip()
@@ -181,11 +185,50 @@ def append_audit(audit_path: Path, plan_id: str, rowid: str, result: dict[str, A
         handle.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 
+def datasheet_spans(matrix: list[list[Any]]) -> dict[str, list[int]]:
+    """``母体rowid -> 这个数据表占用的全部行号``（含母体行与所有子体行）。
+
+    导出表里一个多变体数据表是连续的几行：母体行有 Row ID，后面跟着
+    若干无 Row ID 的子体行，直到下一个带 Row ID 的行为止。
+    """
+
+    from ebay_mcp_server.providers.soldeazy_workbook import header_row_count
+
+    spans: dict[str, list[int]] = {}
+    current = ""
+    header = header_row_count(matrix)
+    for number, row in enumerate(matrix, start=1):
+        if number <= header:
+            continue
+        rowid = str(row[0] or "").strip()
+        if rowid:
+            current = rowid
+            spans[current] = [number]
+        elif current:
+            spans[current].append(number)
+    return spans
+
+
+def plan_rows(plan: ChangePlan, matrix: list[list[Any]]) -> list[int]:
+    """计划涉及的数据表在导出文件里占用的全部行号。
+
+    必须带上母体行与全部子体行：只传子体行会丢结构，只传母体行则子体不跟随。
+    """
+
+    spans = datasheet_spans(matrix)
+    keep: set[int] = set()
+    for item in plan.items:
+        keep.update(spans.get(item.rowid, []))
+    return sorted(keep)
+
+
 async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str, Any]:
     """统一走「导出 → 批量改 → 一次上传」：整个计划只有一个上传请求。
 
-    逐条打开表单保存的通道已封存——它每条 2 次请求，规模一上去就慢，
-    而且失败粒度反而更碎。这条批量通道从同一份冻结计划出发，对账口径不变。
+    上传文件只保留**计划涉及的数据表**（``keep_rows``）——实测整份导出上传时，
+    平台会把文件里每一行都 revise 一遍，没打算动的行会被覆盖成导出时的值。
+
+    上传后按工序管理核对：``total_items`` 与计划的数据表数一致，且逐行成功。
     """
 
     from ebay_mcp_server.providers.soldeazy_workbook import (
@@ -195,6 +238,7 @@ async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str,
 
     workdir.mkdir(parents=True, exist_ok=True)
     audit = workdir / f"{plan.plan_id}.audit.jsonl"
+    expected_datasheets = len({item.rowid for item in plan.items})
 
     exported = workdir / f"{plan.plan_id}.export.xlsx"
     await browser.search("", plan.site)
@@ -221,31 +265,100 @@ async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str,
             "audit": str(audit),
         }
 
+    keep = plan_rows(plan, matrix)
     target = workdir / f"{plan.plan_id}.done.xlsx"
-    report = build_upload_file(exported, target, changes)
+    report = build_upload_file(exported, target, changes, keep_rows=keep)
     upload = await browser.upload_via_api(target)
+    handle = upload.get("handle")
+
+    # 等工序任务结束再核对，避免读到"处理中"
+    queue = await _await_queue(browser, handle, expected_datasheets)
 
     append_audit(
         audit,
         plan.plan_id,
         "-",
         {
-            "success": True,
-            "applied": [{"rows": len(changes)}],
-            "warnings": [],
+            "success": bool(queue.get("ok")),
+            "applied": [{"rows": len(changes), "datasheets": expected_datasheets}],
+            "warnings": queue.get("problems") or [],
         },
     )
     return {
         "plan_id": plan.plan_id,
-        "ok": True,
+        "ok": bool(queue.get("ok")),
         "channel": "upload",
         "requests": 2,
         "items": len(changes),
         "rows_touched": len(changes),
+        "uploaded_rows": report.get("rows"),
+        "expected_datasheets": expected_datasheets,
         "changed_columns": report["changed_columns"],
         "file": report["path"],
-        "handle": upload.get("handle"),
+        "handle": handle,
+        "queue": queue,
         "audit": str(audit),
+    }
+
+
+async def _await_queue(
+    browser: Any,
+    handle: Any,
+    expected_datasheets: int,
+    *,
+    attempts: int = 10,
+    wait_seconds: float = 6.0,
+) -> dict[str, Any]:
+    """轮询工序管理，确认任务完成、条数对得上、逐行成功。"""
+
+    if handle in (None, ""):
+        return {"ok": False, "problems": ["上传没有返回 handle，无法核对工序任务"]}
+
+    job_id = str(handle)
+    job: dict[str, Any] = {}
+    for _ in range(attempts):
+        jobs = await browser.queue_jobs(limit=30)
+        job = next((j for j in jobs if str(j.get("queue_job_idx")) == job_id), {})
+        if job:
+            res = job.get("queue_job_res") or {}
+            processing = str(res.get("processing_msgs_count", "0"))
+            if processing in {"0", ""} and str(job.get("queue_job_enddate") or "").strip():
+                break
+        await asyncio.sleep(wait_seconds)
+
+    if not job:
+        return {"ok": False, "job_id": job_id, "problems": ["工序列表里找不到这个任务"]}
+
+    detail = await browser.queue_result(job_id)
+    res = job.get("queue_job_res") or {}
+    total = str(res.get("total_items", ""))
+    success = str(res.get("success_msgs_count", ""))
+    failed = str(res.get("failure_msgs_count", ""))
+
+    problems: list[str] = []
+    if failed not in {"0", ""}:
+        problems.append(f"工序任务有 {failed} 条失败")
+    if total and total != str(expected_datasheets):
+        problems.append(
+            f"工序处理了 {total} 个数据表，计划是 {expected_datasheets} 个"
+        )
+
+    bad_rows = [row for row in detail.get("rows") or [] if "successful" not in row["result"].lower()]
+    if bad_rows:
+        problems.append(f"{len(bad_rows)} 行结果不是 Revise Successful")
+
+    return {
+        "ok": not problems,
+        "job_id": job_id,
+        "act": job.get("queue_job_act"),
+        "status": job.get("queue_job_status"),
+        "created": job.get("queue_job_createdate"),
+        "total_items": total,
+        "success": success,
+        "failed": failed,
+        "expected_datasheets": expected_datasheets,
+        "rowids": [row["rowid"] for row in detail.get("rows") or []],
+        "problems": problems,
     }
 
 

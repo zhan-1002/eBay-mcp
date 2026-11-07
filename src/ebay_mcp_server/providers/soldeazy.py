@@ -1110,6 +1110,64 @@ class SoldeazyBrowser:
             }
         return values
 
+    async def queue_jobs(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        """读工序管理任务列表（``queue-job/ajax/get-queue-jobs``）。"""
+
+        page = await self._ensure_page()
+        await page.goto(f"{self.base_url}/app/soldeazy/queue-job", wait_until="domcontentloaded")
+        await asyncio.sleep(1.5)
+        response = await page.context.request.post(
+            f"{self.base_url}/app/soldeazy/queue-job/ajax/get-queue-jobs",
+            form={},
+            timeout=60_000,
+        )
+        text = (await response.text()).lstrip("\ufeff").strip()
+        try:
+            payload = json.loads(text)
+        except ValueError as exc:
+            raise EbayMcpError(
+                "SOLDEAZY_QUEUE_BAD_RESPONSE",
+                "工序管理列表不是 JSON",
+                details={"head": text[:160]},
+            ) from exc
+        jobs = ((payload.get("body") or {}).get("queue_jobs") or [])[:limit]
+        return jobs
+
+    async def queue_result(self, job_id: str) -> dict[str, Any]:
+        """读某个任务的逐行处理结果（``queue/result?job_id=…``，返回 HTML）。"""
+
+        page = await self._ensure_page()
+        response = await page.context.request.post(
+            f"{self.base_url}/app/soldeazy/queue/result",
+            params={"job_id": str(job_id)},
+            timeout=60_000,
+        )
+        html = await response.text()
+
+        def pick(pattern: str) -> str:
+            match = re.search(pattern, html, re.S)
+            return re.sub(r"<[^>]+>", "", match.group(1)).strip() if match else ""
+
+        rows = []
+        for block in re.findall(r"<tr>(.*?)</tr>", html, re.S):
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", block, re.S)
+            if len(cells) < 3:
+                continue
+            file_name = re.sub(r"<[^>]+>", "", cells[0]).strip()
+            rowid = re.sub(r"<[^>]+>", "", cells[1]).strip()
+            outcome = re.sub(r"<[^>]+>", "", cells[2]).strip()
+            if rowid.isdigit():
+                rows.append({"rowid": rowid, "file": file_name, "result": outcome})
+
+        return {
+            "job_id": str(job_id),
+            "act": pick(r"<div class='job-act-label'>([^<]+)</div>"),
+            "processed": pick(r"已处理:</th><td>([^<]+)</td>"),
+            "success": pick(r"成功:</th><td>([^<]+)</td>"),
+            "failed": pick(r"失败:</th><td>([^<]+)</td>"),
+            "rows": rows,
+        }
+
     async def delete_datasheets(self, rowids: Sequence[str]) -> dict[str, Any]:
         """删除数据表（实测：整表单提交，不是 AJAX）。
 
