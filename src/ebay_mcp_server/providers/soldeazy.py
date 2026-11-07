@@ -285,8 +285,8 @@ class SoldeazyBrowser:
             await (await self._locate("login_pass")).fill(password)
             await (await self._locate("login_submit")).click()
         else:
-            # 无凭据时留给人工：最多等 manual_recovery_timeout
-            deadline = self.settings.soldeazy_navigation_timeout * 20
+            # 无凭据时留给人工，但别干等十分钟：120 秒没登上就直接报错
+            deadline = min(120.0, self.settings.soldeazy_navigation_timeout * 4)
             await self._wait_logged_in(page, deadline)
 
         await self._wait_logged_in(page, self.settings.soldeazy_navigation_timeout * 2)
@@ -754,10 +754,17 @@ class SoldeazyBrowser:
             }
             """
         )
+        # 字段名不存在或没有对应选项时，页面照样会提交成功——必须自己判失败
+        rejected = {
+            name: state
+            for name, state in applied.items()
+            if state in {"missing", "no option"}
+        }
         return {
-            "success": clicked is not None and not notice,
+            "success": clicked is not None and not notice and not rejected,
             "rowid": str(rowid),
             "filled": applied,
+            "rejected": rejected,
             "notice": notice,
         }
 

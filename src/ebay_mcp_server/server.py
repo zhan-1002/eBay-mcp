@@ -687,25 +687,61 @@ async def soldeazy_preview_price_change(
 
 
 @mcp.tool(annotations=READ_ONLY_NETWORK)
-async def soldeazy_preview_stock_change(site: str, stock_sheet_path: str) -> dict[str, Any]:
-    """Preview a stock change from the operator's hand-filled sheet.
+async def soldeazy_preview_stock_change(
+    site: str,
+    stock_sheet_path: str = "",
+    stock: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Preview a stock change; the write itself goes through the same API chain.
 
-    Reads ``库存更新.xlsx`` (SKU | 库存 | 备注), exports the site datasheet, and
-    plans an absolute quantity write per row. The quantity is written as-is: no
-    pack conversion, and the match residue is ignored.
+    Two ways to supply the target quantities:
+
+    * ``stock`` — ``{SKU: 数量}`` given straight from the caller (no file needed);
+    * ``stock_sheet_path`` — the operator's ``库存更新.xlsx`` (SKU | 库存 | 备注).
+
+    Either way the plan is computed on the exported datasheet and the write is an
+    absolute quantity per row: no pack conversion, residue ignored.
     """
     try:
-        from ebay_mcp_server.providers.soldeazy_stock import read_stock_sheet
+        from ebay_mcp_server.providers.soldeazy_stock import (
+            StockSheet,
+            read_stock_sheet,
+        )
 
-        sheet = read_stock_sheet(stock_sheet_path)
+        if stock:
+            entries: dict[str, float] = {}
+            issues: list[str] = []
+            for raw_sku, raw_qty in stock.items():
+                sku = str(raw_sku).strip()
+                if not sku:
+                    issues.append("有空 SKU")
+                    continue
+                try:
+                    qty = float(str(raw_qty).replace(",", "").strip())
+                except (TypeError, ValueError):
+                    issues.append(f"{sku}：数量 {raw_qty!r} 不是数字")
+                    continue
+                if qty < 0 or qty != int(qty):
+                    issues.append(f"{sku}：数量 {qty:g} 必须是非负整数")
+                    continue
+                entries[sku] = qty
+            sheet = StockSheet(entries=entries, issues=issues)
+        elif stock_sheet_path:
+            sheet = read_stock_sheet(stock_sheet_path)
+        else:
+            raise EbayMcpError(
+                "SOLDEAZY_STOCK_SOURCE",
+                "请给出 stock（{SKU: 数量}）或 stock_sheet_path。",
+            )
+
         if sheet.issues:
             raise EbayMcpError(
                 "SOLDEAZY_STOCK_SHEET_INVALID",
-                "库存表校验未通过，整份拒收",
+                "库存数据校验未通过，整份拒收",
                 details={"issues": sheet.issues[:20]},
             )
         if not sheet.entries:
-            raise EbayMcpError("SOLDEAZY_STOCK_SHEET_EMPTY", "库存表里没有可用的 SKU 行")
+            raise EbayMcpError("SOLDEAZY_STOCK_SHEET_EMPTY", "没有可用的 SKU 行")
 
         catalog = sorted(sheet.entries)
         query = " ".join(f"*{sku}" for sku in catalog)
