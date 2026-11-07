@@ -31,11 +31,15 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "soldeazy_create_datasheet",
         "soldeazy_delete_datasheet",
         "soldeazy_upload_photo",
+        "soldeazy_plan_changes",
+        "soldeazy_confirm_plan",
+        "soldeazy_apply_plan",
+        "soldeazy_reconcile_plan",
         "soldeazy_preview_stock_change",
         "soldeazy_update_price",
         "soldeazy_update_stock",
     } <= tools
-    assert len(tools) == 28
+    assert len(tools) == 32
     assert not any("recall" in name or "selection" in name for name in tools)
     # 写工具已注册但默认关闭：没有 SOLDEAZY_WRITE_ENABLED 时一律拒绝
     assert {"soldeazy_update_price", "soldeazy_update_stock"} <= tools
