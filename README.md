@@ -106,7 +106,42 @@ Soldeazy 没有公开接口文档，生产链路是「导出 xlsx → 离线改 
 |---|---|---|
 | `SOLDEAZY_HEADLESS` | `1`（无头） | 日常零窗口；只有首次登录需要人工时才开有头 |
 | `SOLDEAZY_EXPORT_CHANNEL` | `page` | 可切 `cookie`，两者输出逐格一致（已验收） |
+| `SOLDEAZY_BROWSER_CHANNEL` | `chrome` | 见下方"浏览器内核" |
+| `SOLDEAZY_PROFILE_DIR` | `%LOCALAPPDATA%\ebay-mcp\profiles\soldeazy` | 登录态存放位置，可覆盖 |
 | 登录态 | cookie 落盘 | 登录时勾「记住用户名」，cookie 存 `session_cookies.json`（含会话级），重启可复用 |
+
+### 浏览器内核（换机器部署必看）
+
+`SOLDEAZY_BROWSER_CHANNEL=chrome` 的含义是**"用本机安装的 Chrome"**——
+代码里没有任何硬编码的浏览器路径，Chrome 的位置由 Playwright 向系统查询。
+
+启动时会按顺序尝试，前一个失败自动回退：
+
+```
+1. 配置的 channel（默认 chrome）   本机装了 Chrome 就走这条
+2. chromium                        Playwright 自带的完整 Chromium
+3. Playwright 默认                 无头时用 headless shell
+```
+
+三条都不通时，错误里会**逐条列出失败原因**（哪个可执行文件不存在），
+不会只说一句"启动失败"。
+
+**目标机器没装 Chrome 怎么办**：执行一次
+
+```powershell
+uv run playwright install chromium
+```
+
+之后就会自动回退到第 2 条，不需要改配置。
+
+**常见报错对照**
+
+| 报错 | 原因 | 处理 |
+|---|---|---|
+| `Executable doesn't exist at ...chrome.exe` | 本机没装 Chrome，也没装 Playwright Chromium | `uv run playwright install chromium` |
+| `Unsupported chromium channel` | `SOLDEAZY_BROWSER_CHANNEL` 填了不存在的名字 | 设回 `chrome`，或留空 |
+| `write_enabled=false` | 写工具开关没开 | 设 `SOLDEAZY_WRITE_ENABLED=1` |
+| `profile_ready=false` | 还没登录过，profile 目录为空 | 调 `soldeazy_open_login` 登录一次即可，目录会自动创建 |
 
 ### 库存表约定（运营手填，可选）
 

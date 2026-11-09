@@ -178,6 +178,7 @@ class SoldeazyBrowser:
         self.active_shop: dict[str, str] | None = None
         self._last_query: str = ""
         self._last_site: str = ""
+        self.browser_channel_used: str = ""
 
     # ---------- 生命周期 ----------
     @property
@@ -198,7 +199,49 @@ class SoldeazyBrowser:
             "profile_ready": self.profile_ready(),
             "write_enabled": self.settings.soldeazy_write_enabled,
             "browser_open": self._page is not None,
+            "browser_channel_configured": self.settings.soldeazy_browser_channel or "(内置 Chromium)",
+            "browser_channel_used": self.browser_channel_used or "(未启动)",
+            "headless": self.settings.soldeazy_headless,
         }
+
+    async def _launch_context(self, directory: Path) -> Any:
+        """启动持久化上下文：先试配置的 channel，失败自动回退到内置 Chromium。
+
+        站点本身不挑浏览器，``channel=chrome`` 只是「用本机装的 Chrome」。
+        目标机器没装 Chrome 时不该直接失败——内置 Chromium 一样能用。
+        """
+
+        channel = (self.settings.soldeazy_browser_channel or "").strip()
+        # 依次尝试：配置的 channel → 完整 Chromium（新无头模式）→ Playwright 默认
+        candidates = ([channel] if channel else []) + ["chromium", ""]
+        errors: list[str] = []
+        seen: set[str] = set()
+
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            label = candidate or "默认内核"
+            try:
+                context = await self._playwright.chromium.launch_persistent_context(
+                    str(directory),
+                    headless=self.settings.soldeazy_headless,
+                    channel=candidate or None,
+                    args=["--disable-blink-features=AutomationControlled"],
+                    locale="zh-CN",
+                )
+                self.browser_channel_used = label
+                return context
+            except Exception as exc:  # noqa: BLE001 - 换下一个候选
+                errors.append(f"{label}: {str(exc).splitlines()[0][:160]}")
+
+        raise EbayMcpError(
+            "SOLDEAZY_BROWSER_LAUNCH_FAILED",
+            "浏览器启动失败：本机 Chrome 与内置 Chromium 都不可用。"
+            "请安装 Chrome，或执行 `uv run playwright install chromium`，"
+            "或把 SOLDEAZY_BROWSER_CHANNEL 设为空以使用内置 Chromium。",
+            details={"attempts": errors},
+        )
 
     async def _ensure_page(self) -> Any:
         if self._page is not None:
@@ -219,13 +262,7 @@ class SoldeazyBrowser:
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
-        self._context = await self._playwright.chromium.launch_persistent_context(
-            str(directory),
-            headless=self.settings.soldeazy_headless,
-            channel=self.settings.soldeazy_browser_channel or None,
-            args=["--disable-blink-features=AutomationControlled"],
-            locale="zh-CN",
-        )
+        self._context = await self._launch_context(directory)
         await self._restore_session()
         pages = self._context.pages
         self._page = pages[0] if pages else await self._context.new_page()

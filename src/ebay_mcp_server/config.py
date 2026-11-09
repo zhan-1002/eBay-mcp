@@ -138,8 +138,8 @@ class Settings:
                     _default_data_dir() / "profiles" / "soldeazy",
                 )
             ).strip(),
-            soldeazy_headless=_env_bool("SOLDEAZY_HEADLESS", True),
-        soldeazy_export_channel=str(_env("SOLDEAZY_EXPORT_CHANNEL", "page")).strip() or "page",
+                soldeazy_headless=_env_bool("SOLDEAZY_HEADLESS", True),
+            soldeazy_export_channel=str(_env("SOLDEAZY_EXPORT_CHANNEL", "page")).strip() or "page",
             soldeazy_browser_channel=str(
                 _env("SOLDEAZY_BROWSER_CHANNEL", "chrome")
             ).strip(),
