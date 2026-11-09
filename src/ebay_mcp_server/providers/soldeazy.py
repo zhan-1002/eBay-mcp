@@ -1331,7 +1331,12 @@ class SoldeazyBrowser:
         }
 
     async def read_datasheet_values(
-        self, site: str = "US", query: str = "", *, search: bool = True
+        self,
+        site: str = "US",
+        query: str = "",
+        *,
+        search: bool = True,
+        only_listed: bool = True,
     ) -> dict[tuple[str, str], dict[str, Any]]:
         """搜索并导出一次，返回 ``{(母体rowid, 子体SKU): {qty, price, parent, ...}}``。
 
@@ -1341,7 +1346,7 @@ class SoldeazyBrowser:
         from ebay_mcp_server.providers.soldeazy_workbook import read_matrix
 
         if search:
-            await self.search(query, site)
+            await self.search(query, site, only_listed=only_listed)
 
         page = await self._ensure_page()
         workdir = Path(self.profile_dir).parent / "reconcile"

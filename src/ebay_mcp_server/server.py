@@ -1078,6 +1078,7 @@ async def soldeazy_change_price(
     dry_run: bool = False,
     sync_price: bool = True,
     verbose: bool = False,
+    include_unlisted: bool = False,
 ) -> dict[str, Any]:
     """**一步改价**：起草 → 冻结 → 执行 → 对账，只返回判决。
 
@@ -1109,6 +1110,7 @@ async def soldeazy_change_price(
             sync_price=sync_price,
             sync_quantity=False,
             verbose=verbose,
+            only_listed=not include_unlisted,
             deps={
                 "build_items": build_items,
                 "make_plan": make_plan,
@@ -1140,6 +1142,7 @@ async def soldeazy_change_stock(
     shop: str = "",
     dry_run: bool = False,
     verbose: bool = False,
+    include_unlisted: bool = False,
 ) -> dict[str, Any]:
     """**一步改库存**：起草 → 冻结 → 执行 → 对账，只返回判决。
 
@@ -1167,6 +1170,7 @@ async def soldeazy_change_stock(
             sync_price=False,
             sync_quantity=True,
             verbose=verbose,
+            only_listed=not include_unlisted,
             deps={
                 "build_items": build_items,
                 "make_plan": make_plan,
@@ -1482,6 +1486,7 @@ async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
             items=[PlanItem(**item) for item in raw.get("items", [])],
             supersedes=raw.get("supersedes", ""),
             note=raw.get("note", ""),
+            only_listed=bool(raw.get("only_listed", True)),
         )
         if not plan.items:
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "计划里没有任何改动，不冻结。")

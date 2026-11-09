@@ -114,7 +114,8 @@ async def run_change(
     sync_price: bool,
     sync_quantity: bool,
     verbose: bool,
-    deps: dict[str, Any],
+    only_listed: bool = True,
+    deps: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """内部串起 起草 → 冻结 → 执行 → 对账，返回压缩后的判决。"""
 
@@ -130,7 +131,7 @@ async def run_change(
     resolve_shop = deps["resolve_shop"]
 
     picked = await resolve_shop(shop)
-    live = await browser.read_datasheet_values(site)
+    live = await browser.read_datasheet_values(site, only_listed=only_listed)
     items, build_report = build_items(live, kind, targets)
 
     if not items:
@@ -152,7 +153,7 @@ async def run_change(
             "problems": [],
         }
 
-    plan = make_plan(kind, site, picked, items)
+    plan = make_plan(kind, site, picked, items, only_listed=only_listed)
     write_draft(plan_dir, plan)
 
     if dry_run:
@@ -163,6 +164,7 @@ async def run_change(
             "plan_id": plan.plan_id,
             "items": len(items),
             "datasheets": len({item.rowid for item in items}),
+            "only_listed": only_listed,
             "sample": [item.as_dict() for item in items[:5]],
             "hint": "确认无误后传 dry_run=false 执行",
         }

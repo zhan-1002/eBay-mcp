@@ -114,3 +114,42 @@ def test_digest_changes_with_content(tmp_path: Path) -> None:
 
 def test_new_plan_id_is_kind_prefixed() -> None:
     assert new_plan_id("stock").startswith("stock-")
+
+
+def test_plan_persists_only_listed(tmp_path):
+    """计划里必须记住起草时用的是不是『已刊登』，执行阶段要沿用同一个值。"""
+
+    from ebay_mcp_server.providers.soldeazy_plan import (
+        ChangePlan, PlanItem, freeze, load_verified, write_draft,
+    )
+
+    plan = ChangePlan(
+        plan_id="listed-flag", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+        items=[PlanItem("4512957", "JJPC0029", "price", 21.9, 23.0)],
+        only_listed=False,
+    )
+    write_draft(tmp_path, plan)
+    freeze(tmp_path, plan)
+    loaded, _digest = load_verified(tmp_path, "listed-flag")
+    assert loaded.only_listed is False
+
+
+def test_plan_defaults_to_listed_only(tmp_path):
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
+
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US", shop={}, created_at="x",
+        items=[],
+    )
+    assert plan.only_listed is True
+
+
+def test_change_tools_expose_include_unlisted():
+    import inspect
+
+    from ebay_mcp_server import server
+
+    for tool in (server.soldeazy_change_price, server.soldeazy_change_stock):
+        sig = inspect.signature(tool)
+        assert sig.parameters["include_unlisted"].default is False

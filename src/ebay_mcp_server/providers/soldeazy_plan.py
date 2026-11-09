@@ -59,6 +59,9 @@ class ChangePlan:
     status: str = DRAFT
     supersedes: str = ""
     note: str = ""
+    # 起草时是否只查「已刊登」。执行与对账必须沿用同一个值，
+    # 否则会出现"按已刊登算出来、按全部去上传"的错位。
+    only_listed: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -70,6 +73,7 @@ class ChangePlan:
             "status": self.status,
             "supersedes": self.supersedes,
             "note": self.note,
+            "only_listed": self.only_listed,
             "items": [item.as_dict() for item in self.items],
         }
 
@@ -159,6 +163,7 @@ def load_verified(directory: Path, plan_id: str) -> tuple[ChangePlan, str]:
         status=raw.get("status", DRAFT),
         supersedes=raw.get("supersedes", ""),
         note=raw.get("note", ""),
+        only_listed=bool(raw.get("only_listed", True)),
     )
     actual = plan.digest()
     if actual != expected:

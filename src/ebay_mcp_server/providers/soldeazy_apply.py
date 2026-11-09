@@ -108,6 +108,7 @@ def make_plan(
     *,
     supersedes: str = "",
     note: str = "",
+    only_listed: bool = True,
 ) -> ChangePlan:
     return ChangePlan(
         plan_id=new_plan_id(kind),
@@ -118,6 +119,7 @@ def make_plan(
         items=items,
         supersedes=supersedes,
         note=note,
+        only_listed=only_listed,
     )
 
 
@@ -281,7 +283,7 @@ async def apply_plan(
     expected_datasheets = len({item.rowid for item in plan.items})
 
     exported = workdir / f"{plan.plan_id}.export.xlsx"
-    await browser.search("", plan.site)
+    await browser.search("", plan.site, only_listed=plan.only_listed)
     await browser.export(exported)
     _sheet, matrix = read_matrix(exported)
 
@@ -339,7 +341,7 @@ async def apply_plan(
     if sync:
         planned_ids = sorted({item.rowid for item in plan.items})
         # 重新搜索后再勾选，BULK SYNC 只作用于勾选行
-        await browser.search("", plan.site)
+        await browser.search("", plan.site, only_listed=plan.only_listed)
         selected = await browser.select_datasheets(planned_ids)
         if selected != len(planned_ids):
             sync_problems.append(
@@ -565,7 +567,7 @@ async def reconcile(
     - 连续两轮结果完全一致也算稳定（说明确实没生效，不再空等）。
     """
 
-    await browser.search("", plan.site)
+    await browser.search("", plan.site, only_listed=plan.only_listed)
 
     previous: list[dict[str, Any]] | None = None
     rounds = 0
@@ -575,7 +577,9 @@ async def reconcile(
 
     for round_no in range(1, attempts + 1):
         rounds = round_no
-        live = await browser.read_datasheet_values(plan.site, "", search=False)
+        live = await browser.read_datasheet_values(
+            plan.site, "", search=False, only_listed=plan.only_listed
+        )
         matched = 0
         mismatches = []
         absent = []
