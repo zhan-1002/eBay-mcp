@@ -221,3 +221,19 @@ def test_save_session_records_error_instead_of_swallowing(tmp_path) -> None:
     browser._context = object()  # 有上下文但没有 cookies() 方法
     asyncio.run(browser._save_session())
     assert "AttributeError" in browser.session_save_error
+
+
+def test_search_defaults_to_listed_only():
+    import inspect
+
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    sig = inspect.signature(SoldeazyBrowser.search)
+    assert sig.parameters["only_listed"].default is True
+    assert sig.parameters["only_listed"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_listed_status_selector_exists():
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    assert hasattr(SoldeazyBrowser, "_select_status_listed")

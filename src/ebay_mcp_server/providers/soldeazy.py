@@ -187,6 +187,7 @@ class SoldeazyBrowser:
         self.active_shop: dict[str, str] | None = None
         self._last_query: str = ""
         self._last_site: str = ""
+        self._last_status: str = ""
         self.browser_channel_used: str = ""
         self.session_save_error: str = ""
         self.session_cookie_count: int = 0
@@ -549,8 +550,15 @@ class SoldeazyBrowser:
         )
 
     # ---------- 搜索 ----------
-    async def search(self, sku_terms: str, site: str, shop: str = "") -> dict[str, Any]:
-        """Search one site by a space-joined SKU string and read the results."""
+    async def search(
+        self, sku_terms: str, site: str, shop: str = "", *, only_listed: bool = True
+    ) -> dict[str, Any]:
+        """Search one site by a space-joined SKU string and read the results.
+
+        `only_listed` 默认开启：只搜「已刊登」的数据表。
+        改价/改库存只对已刊登的有意义——未刊登的同步不到 eBay，
+        混进来只会让上传数和同步数对不上。
+        """
 
         self._last_query = sku_terms or ""
         self._last_site = site or ""
@@ -565,6 +573,10 @@ class SoldeazyBrowser:
             shop = shop or ((self.active_shop or {}).get("name") or "")
             if shop:
                 await self._select_shop(shop)
+            # 改价/改库存只对「已刊登」有意义：未刊登的数据表同步不到 eBay，
+            # 传上去只会让上传数和同步数对不上。
+            if only_listed:
+                await self._select_status_listed()
             await self._select_scope_whole_result()
             await (await self._locate("search_button")).click()
             await page.wait_for_load_state("domcontentloaded")
@@ -582,6 +594,7 @@ class SoldeazyBrowser:
                 "site": site,
                 "shop": shop,
                 "search": sku_terms,
+                "status_filter": self._last_status or ("已刊登" if only_listed else "不限"),
                 "columns": header,
                 "row_count": len(records),
                 "rows": records,
@@ -721,6 +734,36 @@ class SoldeazyBrowser:
                 await scope.select_option("whole_result", timeout=5000)
         except Exception:  # noqa: BLE001 - 只是尽力设置
             pass
+
+    async def _select_status_listed(self) -> None:
+        """把状态筛成「已刊登(所有)」。找不到就跳过，不阻断搜索。"""
+
+        page = await self._ensure_page()
+        picked = await page.evaluate(
+            """
+            () => {
+              const sel = Array.from(document.querySelectorAll('select'))
+                .find((x) => x.name === 'listactive');
+              if (!sel) return null;
+              const options = Array.from(sel.options);
+              // 英文界面 Listed(All)，中文界面 已刊登(所有)；排除 Unlisted / 未刊登
+              const hit = options.find((o) => {
+                const text = (o.textContent || '').trim();
+                const lower = text.toLowerCase();
+                if (lower.includes('unlisted') || text.includes('未刊登')) return false;
+                return lower.includes('listed') || text.includes('已刊登');
+              });
+              if (!hit) return null;
+              if (sel.value !== hit.value) {
+                sel.value = hit.value;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              return { value: hit.value, text: (hit.textContent || '').trim() };
+            }
+            """
+        )
+        if picked:
+            self._last_status = str(picked.get("text") or "")
 
     async def _select_site(self, site: str) -> None:
         """站点下拉里用的是英文站点名（US/UK/Germany…），不是 US/DE 这种代码。"""
