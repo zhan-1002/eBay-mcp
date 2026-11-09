@@ -96,9 +96,9 @@ def compact_plan_report(
         }
     else:
         report["hint"] = (
-            "通过。明细在 plan/reconcile 文件里，需要时用 verbose=true 或读文件。"
+            "通过，无需再查明细。"
             if ok
-            else "未通过。先看 problems；需要逐条明细用 verbose=true。"
+            else "未通过。先看 problems；需要逐条核对再传 verbose=true（较贵）。"
         )
     return report
 
