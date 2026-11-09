@@ -1,0 +1,61 @@
+﻿
+
+def test_compact_report_is_small_and_verdict_first():
+    """一步工具的返回必须是判决，不是明细。"""
+
+    import json
+
+    from ebay_mcp_server.providers.soldeazy_change import compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="price-x", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+        items=[PlanItem(str(4523000 + i), "JJPC0029", "price", 21.9, 23.0) for i in range(200)],
+    )
+    applied = {"ok": True, "sync": "ok", "sync_problems": [], "queue": {"ok": True}}
+    reconciled = {"ok": True, "matched": 200, "items": 200}
+
+    report = compact_plan_report(plan, applied=applied, reconcile=reconciled, kind="price")
+    text = json.dumps(report, ensure_ascii=False)
+
+    assert report["ok"] is True
+    assert report["items"] == 200
+    assert report["reconciled"] == "200/200"
+    assert "detail" not in report
+    # 200 条改动也必须压到很小的返回
+    assert len(text) < 600
+
+
+def test_compact_report_surfaces_problems_on_failure():
+    import json
+
+    from ebay_mcp_server.providers.soldeazy_change import compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="price-y", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+        items=[PlanItem("4512957", "JJPC0029", "price", 21.9, 23.0)],
+    )
+    applied = {"ok": False, "error": "工序处理了 7 个数据表，计划是 8 个", "queue": {"ok": False, "problems": ["工序任务有 1 条失败"]}}
+    reconciled = {"ok": False, "matched": 0, "items": 1, "mismatched_total": 1, "absent_total": 0}
+
+    report = compact_plan_report(plan, applied=applied, reconcile=reconciled, kind="price")
+    assert report["ok"] is False
+    assert report["problems"]
+    assert len(report["problems"]) <= 10
+    assert len(json.dumps(report, ensure_ascii=False)) < 900
+
+
+def test_compact_report_problems_are_capped():
+    from ebay_mcp_server.providers.soldeazy_change import MAX_PROBLEMS, compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
+
+    plan = ChangePlan(plan_id="p", kind="price", site="US", shop={}, created_at="x", items=[])
+    applied = {"ok": False, "queue": {"ok": False, "problems": [f"问题{i}" for i in range(100)]}}
+
+    report = compact_plan_report(plan, applied=applied, reconcile=None, kind="price")
+    assert len(report["problems"]) == MAX_PROBLEMS
+    # 100 条队列问题 + 1 条“执行未通过”总述
+    assert report["problems_total"] == 101

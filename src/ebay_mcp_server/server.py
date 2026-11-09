@@ -1071,6 +1071,125 @@ async def _resolve_shop_id(shop: str) -> dict[str, str]:
 
 
 @mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_change_price(
+    site: str,
+    targets: dict[str, float],
+    shop: str = "",
+    dry_run: bool = False,
+    sync_price: bool = True,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """**一步改价**：起草 → 冻结 → 执行 → 对账，只返回判决。
+
+    这是推荐入口。旧的四个分步工具仍然可用，但每一步都要把明细推进对话，
+    生产账号几千行时会把 token 烧光（实测累积到 6000 万）。
+    这里服务端自己校验，只回 `ok` + 计数 + 问题列表（最多 10 条）。
+
+    `targets` 是 `{子体SKU: 新价格}`，价格按给定值精确写入。
+    `dry_run=True` 只出计划不写盘。
+    """
+
+    try:
+        from ebay_mcp_server.providers.soldeazy_change import run_change
+        from ebay_mcp_server.providers.soldeazy_apply import apply_plan, build_items, make_plan, reconcile
+        from ebay_mcp_server.providers.soldeazy_plan import freeze, write_draft
+
+        if not targets:
+            raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
+        if not dry_run:
+            _require_write_enabled()
+
+        data = await run_change(
+            kind="price",
+            site=site,
+            targets=targets,
+            shop=shop,
+            dry_run=dry_run,
+            sync=True,
+            sync_price=sync_price,
+            sync_quantity=False,
+            verbose=verbose,
+            deps={
+                "build_items": build_items,
+                "make_plan": make_plan,
+                "write_draft": write_draft,
+                "freeze": freeze,
+                "apply_plan": apply_plan,
+                "reconcile": reconcile,
+                "plan_dir": _plan_dir(),
+                "browser": soldeazy,
+                "resolve_shop": _resolve_shop_id,
+            },
+        )
+        return success("soldeazy_change_price", "soldeazy", data)
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_change_price", exc)
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Unhandled Soldeazy change_price error")
+        return tool_error(
+            "soldeazy_change_price",
+            EbayMcpError("SOLDEAZY_CHANGE_ERROR", f"改价失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
+async def soldeazy_change_stock(
+    site: str,
+    targets: dict[str, float],
+    shop: str = "",
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> dict[str, Any]:
+    """**一步改库存**：起草 → 冻结 → 执行 → 对账，只返回判决。
+
+    `targets` 是 `{母体SKU: 数量}`，会写进该母体下的所有行
+    （母体行 + 全部子体行），数量是绝对值。
+    """
+
+    try:
+        from ebay_mcp_server.providers.soldeazy_change import run_change
+        from ebay_mcp_server.providers.soldeazy_apply import apply_plan, build_items, make_plan, reconcile
+        from ebay_mcp_server.providers.soldeazy_plan import freeze, write_draft
+
+        if not targets:
+            raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
+        if not dry_run:
+            _require_write_enabled()
+
+        data = await run_change(
+            kind="qty",
+            site=site,
+            targets=targets,
+            shop=shop,
+            dry_run=dry_run,
+            sync=True,
+            sync_price=False,
+            sync_quantity=True,
+            verbose=verbose,
+            deps={
+                "build_items": build_items,
+                "make_plan": make_plan,
+                "write_draft": write_draft,
+                "freeze": freeze,
+                "apply_plan": apply_plan,
+                "reconcile": reconcile,
+                "plan_dir": _plan_dir(),
+                "browser": soldeazy,
+                "resolve_shop": _resolve_shop_id,
+            },
+        )
+        return success("soldeazy_change_stock", "soldeazy", data)
+    except EbayMcpError as exc:
+        return tool_error("soldeazy_change_stock", exc)
+    except Exception as exc:  # pragma: no cover
+        logger.exception("Unhandled Soldeazy change_stock error")
+        return tool_error(
+            "soldeazy_change_stock",
+            EbayMcpError("SOLDEAZY_CHANGE_ERROR", f"改库存失败: {type(exc).__name__}"),
+        )
+
+
+@mcp.tool(annotations=REMOTE_WRITE)
 async def soldeazy_create_datasheet(
     item_ids: str = "",
     shop: str = "",

@@ -91,6 +91,38 @@ Soldeazy 没有公开接口文档，生产链路是「导出 xlsx → 离线改 
   数量是绝对值，不做打包换算。
 - 上传只允许落在 **E(数量) / F(价格)** 两列，文件写回后逐格自检，出现其它列差异即拒绝上传。
 
+### 推荐入口：一步到位（省 token）
+
+`python
+soldeazy_change_price(site=US, targets={JJPC0029: 23.0})
+soldeazy_change_stock(site=US, targets={排插-P: 50})
+`
+
+一次调用内部完成 **起草 → 冻结 → 执行 → 上传 → 同步 → 对账**，
+只返回判决：
+
+`json
+{ok: true, kind: price, items: 200, datasheets: 200,
+ uploaded: true, synced: ok, reconciled: 200/200,
+ stage: done, problems: [], problems_total: 0}
+`
+
+**约 90 token，与改动条数无关**（200 条和 2557 条都是 90 出头）。
+
+失败时只回 problems（最多 10 条）+ 总数，需要逐条明细才传 erbose=true。
+
+#### 为什么要有这个入口
+
+原来的四个分步工具把每一步的明细都推进对话，让 agent 读了再判断。
+生产账号几千行时，agent 反复读这些明细，实测累积到 **6000 万 token**。
+
+问题不在单次返回大，而在**把校验责任推给了模型**。现在校验留在服务端，
+模型只接收结论。
+
+分步工具仍然保留（plan_changes / confirm_plan / pply_plan / 
+econcile_plan），
+适合需要人工逐步确认的场景；批量作业请用一步入口。
+
 ### 三个必须记住的坑
 
 1. **导出文件有两行表头**（技术表头 + 显示表头）。裁剪上传文件时必须两行都保留，
