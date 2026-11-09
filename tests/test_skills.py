@@ -3,7 +3,7 @@ import hashlib
 import pytest
 
 from ebay_mcp_server.errors import EbayMcpError
-from ebay_mcp_server.skill_registry import SkillRegistry
+from ebay_mcp_server.skill_registry import SkillRegistry, _parse_frontmatter
 
 
 def test_seven_packaged_skills_have_valid_manifests():
@@ -49,4 +49,51 @@ def test_skill_resource_digest_matches_served_bytes():
 def test_skill_reads_fail_closed_for_invalid_or_unknown_uris(uri):
     with pytest.raises(EbayMcpError):
         SkillRegistry().read(uri)
+
+
+# 回归：别的电脑 clone 下来是 CRLF（Git for Windows 默认 autocrlf=true），
+# 旧实现要求文件以 "---\n" 开头，一遇到 CRLF 就抛 RuntimeError，
+# 导致 ebay_mcp_server.server 直接 import 不了、MCP 服务根本起不来。
+FRONTMATTER_LF = (
+    "---\n"
+    "name: demo-skill\n"
+    "description: 演示用技能\n"
+    "---\n"
+    "\n"
+    "# 正文\n"
+    "内容\n"
+)
+
+
+def test_frontmatter_accepts_lf():
+    values = _parse_frontmatter(FRONTMATTER_LF)
+    assert values["name"] == "demo-skill"
+    assert values["description"] == "演示用技能"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        FRONTMATTER_LF.replace("\n", "\r\n"),          # 纯 CRLF：Windows 全新 checkout
+        "\ufeff" + FRONTMATTER_LF,                     # 带 BOM
+        "\ufeff" + FRONTMATTER_LF.replace("\n", "\r\n"),
+        FRONTMATTER_LF.replace("\n", "\r"),            # 老式 Mac 换行
+    ],
+    ids=["crlf", "bom", "bom+crlf", "cr"],
+)
+def test_frontmatter_accepts_windows_line_endings(text):
+    values = _parse_frontmatter(text)
+    assert values["name"] == "demo-skill"
+    assert values["description"] == "演示用技能"
+
+
+def test_frontmatter_still_rejects_missing_or_broken_blocks():
+    with pytest.raises(RuntimeError):
+        _parse_frontmatter("# 没有 frontmatter\n")
+    with pytest.raises(RuntimeError):
+        _parse_frontmatter("---\nname: demo\r\n")        # 没有结束标记
+    with pytest.raises(RuntimeError):
+        _parse_frontmatter("---\nname: demo\n---\n")     # 缺 description
+    with pytest.raises(RuntimeError):
+        _parse_frontmatter("---\n这不是 key-value\n---\n")
 

@@ -157,13 +157,17 @@ def _walk_files(directory, prefix: str = ""):
 
 
 def _parse_frontmatter(text: str) -> dict[str, Any]:
-    if not text.startswith("---\n"):
+    # 别的电脑 clone / 解压下来可能是 CRLF（Git for Windows 默认 autocrlf=true，
+    # 仓库里没有 .gitattributes），也可能带 UTF-8 BOM。必须在判断 frontmatter
+    # 之前归一化，否则这里一抛错整个 server 都 import 不了、服务起不来。
+    normalized = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    if not normalized.startswith("---\n"):
         raise RuntimeError("SKILL.md must begin with YAML frontmatter")
-    marker = text.find("\n---\n", 4)
+    marker = normalized.find("\n---\n", 4)
     if marker < 0:
         raise RuntimeError("SKILL.md frontmatter is not terminated")
     values: dict[str, Any] = {}
-    for line in text[4:marker].splitlines():
+    for line in normalized[4:marker].splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         key, separator, raw = line.partition(":")

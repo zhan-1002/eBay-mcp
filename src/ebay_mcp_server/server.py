@@ -1672,25 +1672,41 @@ async def soldeazy_change_history(
 ) -> dict[str, Any]:
     """Read the local Soldeazy write history (newest first).
 
-    Every applied write appends one JSONL record: token, site, search string,
-    uploaded file, changed cells and the sync result. ``site``/``kind`` filter
-    the list (kind is ``price`` or ``stock``). Corrupt lines are skipped rather
-    than failing the whole history.
+    两个来源合并后按时间倒序返回：
+
+    * ``plan-audit`` —— 现在的主链路，``soldeazy_apply_plan`` 每执行一个计划
+      就写一行 ``<plan_id>.audit.jsonl``（含 applied/failed/warnings）；
+    * ``legacy-manifest`` —— 已停用的旧写入链路留下的 ``soldeazy-writes.jsonl``，
+      只为让历史记录还能查到。
+
+    ``site``/``kind`` 过滤（kind 用 price 或 stock，``qty`` 与 ``stock`` 等价）。
+    坏行跳过，不让一条脏记录毁掉整份历史。
     """
     try:
+        from ebay_mcp_server.providers.soldeazy_apply import read_audit
         from ebay_mcp_server.providers.soldeazy_write import read_manifest
 
-        if kind and kind not in {"price", "stock"}:
+        if kind and kind not in {"price", "stock", "qty"}:
             raise EbayMcpError("SOLDEAZY_HISTORY_KIND", "kind 只能是 price 或 stock。")
-        path = _manifest_path()
-        records = read_manifest(path, limit=max(1, min(int(limit), 200)), site=site, kind=kind)
+        cap = max(1, min(int(limit), 200))
+        manifest_path = _manifest_path()
+        plan_dir = _plan_dir()
+        legacy = read_manifest(manifest_path, limit=cap, site=site, kind=kind)
+        current = read_audit(plan_dir, limit=cap, site=site, kind=kind)
+        records = sorted(
+            [*current, *legacy],
+            key=lambda record: str(record.get("at") or ""),
+            reverse=True,
+        )[:cap]
         return success(
             "soldeazy_change_history",
-            "local-manifest",
+            "local-audit",
             {
-                "manifest": path,
+                "manifest": str(manifest_path),
+                "plan_dir": str(plan_dir),
                 "count": len(records),
                 "records": records,
+                "sources": {"plan_audit": len(current), "legacy_manifest": len(legacy)},
             },
         )
     except EbayMcpError as exc:

@@ -1,0 +1,21 @@
+# 仓库里所有文本文件一律以 LF 存储和签出。
+#
+# 原因：Windows 上 Git 默认 core.autocrlf=true，全新 clone 会把文本转成 CRLF。
+# 本项目曾因此踩坑：SKILL.md 变成 CRLF 后，skill_registry 的 frontmatter 解析
+# 直接抛 RuntimeError，导致 ebay_mcp_server.server 连 import 都失败、MCP 服务
+# 起不来（别的电脑下载下来就是不能用）。代码侧已做 CRLF/BOM 兼容，这里再加一道
+# 仓库侧的约束，两边都不依赖对方。
+* text=auto eol=lf
+
+# 二进制：不要做任何换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.xlsx binary
+*.xls binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary

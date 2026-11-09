@@ -281,6 +281,80 @@ def append_audit(audit_path: Path, plan_id: str, rowid: str, result: dict[str, A
         handle.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 
+#: 计划里的 kind 用 ``qty``，旧的清单文件用 ``stock``，对外按 ``stock`` 说。
+_KIND_ALIAS = {"stock": "qty"}
+
+
+def read_audit(
+    directory: Path, *, limit: int = 20, site: str = "", kind: str = ""
+) -> list[dict[str, Any]]:
+    """读新的「按计划执行」审计（``<plan_id>.audit.jsonl``），新的在前。
+
+    审计行只有 plan_id / rowid / applied / failed，没有站点和类型，靠同目录的
+    计划 JSON 补齐（计划归档后就都在 ``archive/`` 里，所以用 rglob 一起扫）。
+    坏行跳过，不让一条脏记录毁掉整份历史。
+    """
+
+    if not directory.is_dir():
+        return []
+
+    sites: dict[str, tuple[str, str]] = {}
+    for path in directory.rglob("*.json"):
+        # 计划本体是 <plan_id>.json；同目录还有 <plan_id>.reconcile.json、
+        # *.json.sha256 这类附属文件，它们要么缺 site/kind，要么排序在后，
+        # 一旦覆盖就会把真计划的站点/类型冲成空（真实数据上踩到过）。
+        if path.name.endswith((".reconcile.json", ".audit.jsonl", ".sha256")):
+            continue
+        try:
+            plan = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        plan_id = str(plan.get("plan_id") or "")
+        plan_site = str(plan.get("site") or "").upper()
+        plan_kind = str(plan.get("kind") or "").lower()
+        if not plan_id or not (plan_site or plan_kind):
+            continue
+        sites[plan_id] = (plan_site, plan_kind)
+
+    wanted_site = (site or "").strip().upper()
+    wanted_kind = _KIND_ALIAS.get((kind or "").strip().lower(), (kind or "").strip().lower())
+
+    records: list[dict[str, Any]] = []
+    for path in directory.rglob("*.audit.jsonl"):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                entry = json.loads(text)
+            except ValueError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            plan_id = str(entry.get("plan_id") or "")
+            entry_site, entry_kind = sites.get(plan_id, ("", ""))
+            if wanted_site and entry_site != wanted_site:
+                continue
+            if wanted_kind and entry_kind != wanted_kind:
+                continue
+            records.append(
+                {
+                    **entry,
+                    "site": entry_site,
+                    "kind": entry_kind,
+                    "source": "plan-audit",
+                    "file": path.name,
+                }
+            )
+
+    records.sort(key=lambda item: str(item.get("at") or ""), reverse=True)
+    return records[: max(0, int(limit))]
+
+
 def datasheet_spans(matrix: list[list[Any]]) -> dict[str, list[int]]:
     """``母体rowid -> 这个数据表占用的全部行号``（含母体行与所有子体行）。
 
