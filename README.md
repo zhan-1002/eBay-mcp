@@ -91,6 +91,25 @@ Soldeazy 没有公开接口文档，生产链路是「导出 xlsx → 离线改 
   数量是绝对值，不做打包换算。
 - 上传只允许落在 **E(数量) / F(价格)** 两列，文件写回后逐格自检，出现其它列差异即拒绝上传。
 
+### 大返回必须先征得同意
+
+单次返回超过 **约 1000 token（4000 字符）** 时，工具不返回数据，而是返回一条拒绝：
+
+```json
+{"success": false,
+ "error": {
+   "code": "SOLDEAZY_OUTPUT_TOO_LARGE",
+   "message": "这次返回约 2878 token，超过单次上限（≈1000 token）。需要继续的话，
+               请先和用户确认，再带 allow_large_output=true 重调；
+               或者缩小范围：limit/offset 翻页、关掉 verbose、缩小 targets。",
+   "details": {"chars": 11510, "estimated_tokens": 2878, "threshold_tokens": 1000}}}
+```
+
+调用方应把这段**转述给用户**，拿到明确同意后再带 `allow_large_output=true` 重调。
+
+覆盖的工具：`search_datasheet` / `plan_changes` / `apply_plan` / `reconcile_plan` /
+`change_price` / `change_stock`。
+
 ### 只对「已刊登」动手
 
 改价/改库存只对**已刊登**的数据表有意义——未刊登的没有 eBay 链接，
