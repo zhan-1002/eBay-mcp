@@ -1,18 +1,27 @@
-"""Soldeazy datasheet pricing and stock rules (pure functions, no I/O).
+"""【已停用 · 仅供参考，不得作为业务口径】旧的 Soldeazy 价格/库存推导规则。
 
-These rules were reverse-engineered from the production workflow
-``soldeazy_2_dsheet_price.py`` plus the operator's own correction sheet, and are
-validated against a real ``export_dsheet`` file:
+2026-11-09 起，改价与改库存的主链路是 ``providers/soldeazy_apply.py``
+（``build_items`` / ``plan_rows``），本模块里那套推导逻辑已不再被任何
+MCP 工具调用：旧的「预览改价 / 预览改库存 / 按令牌写入」四个工具都已注释掉，
+不再注册。保留本文件只为历史追溯，请勿在新代码里 import 它的规则函数。
 
-* A datasheet row carries ``Row ID / P.SKU / SKU / Qty / Price / Post.D.``.
-  ``SKU`` may carry a pack suffix (``... x2``) and/or a site suffix (``...US``).
-* Postage is per datasheet, not per row: continuation rows (blank ``Row ID``)
-  usually leave ``Post.D.`` empty and inherit the group's single value.
-* The minimum selling price (最低售价) is a *total*: ``Price + Post.D.``. Rows
-  whose total is below the target are raised so the total lands exactly on it.
-  Prices are only ever raised, never lowered.
-* Stock is owned by the *actual* SKU (the base code), while the listing sells
-  packs; a pack listing's quantity is ``floor(stock / pack)``.
+下面这些**旧口径已经作废**，不要再按它们判断：
+
+* 最低售价 = 价格 + 运费，低于就抬到刚好等于最低售价 —— 作废
+* 价格只涨不降 —— 作废
+* 按同组价格倍数反推「这一行相当于几件」 —— 作废（``infer_pack_factors``
+  已整段注释）
+
+现行口径（用户 2026-11-08/09 确认）：
+
+* 价格：用户给多少就精确改成多少，直接改对应的**子体**那一条，
+  不推算件数、不算最低售价、不减邮费、不做「只涨不降」。
+* 库存：用户给的是**母体**库存，子体库存由平台自己联动变化。
+* 基础 SKU 只改**单件**，跳过套装；只有明确写出 ``ZMFL0012 x2 = 48.9``
+  这种才去改对应套装那一条。
+
+仍然可用的部分：``DatasheetRow``（导出行的数据载体）与 ``Change``
+（``soldeazy_write`` 的漂移比对要用）。其余规则函数均属停用范围。
 """
 
 from __future__ import annotations
@@ -473,51 +482,55 @@ class GroupLadder:
         }
 
 
-def infer_pack_factors(
-    rows: Sequence[DatasheetRow], *, tolerance: float = 0.15
-) -> dict[str, GroupLadder]:
-    """按同组内价格的倍数关系反推每行相当于「几件」。
-
-    不再看 SKU 里的 `` x2`` / ``P10``：同一数据表的价格天然成倍数关系，
-    取组内最低价作基数，其余行按 ``价格 / 基数`` 就近取整，偏离超过
-    ``tolerance`` 的行标为不确定（宁可不改，也不按猜的倍数抬价）。
-    """
-
-    ladders: dict[str, GroupLadder] = {}
-    buckets: dict[str, list[DatasheetRow]] = {}
-    for group, row in group_rows(rows):
-        buckets.setdefault(group, []).append(row)
-
-    for group, members in buckets.items():
-        priced = [row for row in members if row.price > 0]
-        if not priced:
-            ladders[group] = GroupLadder(group, 0, 0.0, {}, {}, {})
-            continue
-        base = min(priced, key=lambda row: row.price)
-        ratios: dict[int, float] = {}
-        factors: dict[int, int] = {}
-        uncertain: dict[int, str] = {}
-        for row in priced:
-            ratio = row.price / base.price
-            nearest = max(1, round(ratio))
-            error = abs(ratio - nearest) / nearest
-            ratios[row.row] = ratio
-            if error > tolerance:
-                uncertain[row.row] = (
-                    f"价格 {row.price:g} 是基价 {base.price:g} 的 {ratio:.2f} 倍，"
-                    f"偏离整数 {nearest} 已 {error:.0%}"
-                )
-            else:
-                factors[row.row] = nearest
-        ladders[group] = GroupLadder(
-            group=group,
-            base_row=base.row,
-            base_price=base.price,
-            ratios=ratios,
-            factors=factors,
-            uncertain=uncertain,
-        )
-    return ladders
+# 2026-11-09 停用：按价格倍数反推件数会误改套装/单件，整段注释掉。
+# 现行口径见模块头与 docs/待确认清单-影刀改价.md；plan_price_changes 的
+# ratio 分支已改成显式报错，任何路径都不会再走到这里。
+#
+# def infer_pack_factors(
+#     rows: Sequence[DatasheetRow], *, tolerance: float = 0.15
+# ) -> dict[str, GroupLadder]:
+#     """按同组内价格的倍数关系反推每行相当于「几件」。
+#
+#     不再看 SKU 里的 `` x2`` / ``P10``：同一数据表的价格天然成倍数关系，
+#     取组内最低价作基数，其余行按 ``价格 / 基数`` 就近取整，偏离超过
+#     ``tolerance`` 的行标为不确定（宁可不改，也不按猜的倍数抬价）。
+#     """
+#
+#     ladders: dict[str, GroupLadder] = {}
+#     buckets: dict[str, list[DatasheetRow]] = {}
+#     for group, row in group_rows(rows):
+#         buckets.setdefault(group, []).append(row)
+#
+#     for group, members in buckets.items():
+#         priced = [row for row in members if row.price > 0]
+#         if not priced:
+#             ladders[group] = GroupLadder(group, 0, 0.0, {}, {}, {})
+#             continue
+#         base = min(priced, key=lambda row: row.price)
+#         ratios: dict[int, float] = {}
+#         factors: dict[int, int] = {}
+#         uncertain: dict[int, str] = {}
+#         for row in priced:
+#             ratio = row.price / base.price
+#             nearest = max(1, round(ratio))
+#             error = abs(ratio - nearest) / nearest
+#             ratios[row.row] = ratio
+#             if error > tolerance:
+#                 uncertain[row.row] = (
+#                     f"价格 {row.price:g} 是基价 {base.price:g} 的 {ratio:.2f} 倍，"
+#                     f"偏离整数 {nearest} 已 {error:.0%}"
+#                 )
+#             else:
+#                 factors[row.row] = nearest
+#         ladders[group] = GroupLadder(
+#             group=group,
+#             base_row=base.row,
+#             base_price=base.price,
+#             ratios=ratios,
+#             factors=factors,
+#             uncertain=uncertain,
+#         )
+#     return ladders
 
 
 def plan_price_changes(
@@ -528,19 +541,29 @@ def plan_price_changes(
     pack_source: PackSource = "ratio",
     tolerance: float = 0.15,
 ) -> PricePlan:
-    """Plan price writes so every row reaches its minimum selling price.
+    """【已停用】旧的「抬到最低售价」改价计划，不再被任何工具调用。
 
-    ``pack_source`` 决定「这一行相当于几件」从哪来：
+    2026-11-09 起改价走 ``soldeazy_apply.build_items``：用户给多少就改多少，
+    不推算件数、不算最低售价、不做「只涨不降」。保留签名只为历史追溯。
 
-    * ``ratio`` - 同组价格阶梯反推（默认，2026-11-02 确认的口径）
+    ``pack_source`` 旧含义（已作废）：
+
+    * ``ratio`` - 同组价格阶梯反推 —— **已停用，传它会直接报错**
     * ``sku``   - 从最长匹配的残留（`` x2`` / ``P10``）读
 
-    ``pack_policy`` 决定这个件数怎么用：``multiply`` 目标 = 最低售价 × 件数，
+    ``pack_policy`` 旧含义：``multiply`` 目标 = 最低售价 × 件数，
     ``same`` 一律按单件，``skip`` 打包行不动。
     """
 
     postage = resolve_postage(rows)
-    ladders = infer_pack_factors(rows, tolerance=tolerance) if pack_source == "ratio" else {}
+    # 2026-11-09 停用：件数不再由价格倍数反推（见模块头）。
+    # ladders = infer_pack_factors(rows, tolerance=tolerance) if pack_source == "ratio" else {}
+    if pack_source == "ratio":
+        raise ValueError(
+            "pack_source='ratio' 已作废：件数不再由同组价格倍数反推。"
+            "改价请改用 soldeazy_apply.build_items（只有明确 xN 才改套装）。"
+        )
+    ladders: dict[str, GroupLadder] = {}
     groups = {row.row: group for group, row in group_rows(rows)}
 
     changes: list[Change] = []

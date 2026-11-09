@@ -48,8 +48,12 @@
 
 ### Soldeazy 远端写（默认关闭）
 
-- `soldeazy_preview_price_change` / `soldeazy_preview_stock_change`：旧版预览入口，返回 `confirm_token`。
-- `soldeazy_update_price` / `soldeazy_update_stock`：旧版写入入口，凭令牌上传并 BULK SYNC。
+- `soldeazy_change_price`：**改价主入口**——用户给的目标价直接改对应子体，不推算件数、
+  不算最低售价、不做「只涨不降」；基础 SKU 只改单件，套装需显式 `xN`。
+- `soldeazy_change_stock`：**改库存主入口**——给母体 SKU 的库存，子体由平台联动。
+- ~~`soldeazy_preview_price_change` / `soldeazy_preview_stock_change`~~：旧预览入口，
+  **已停用**（2026-11-09 注释掉，不再注册）。
+- ~~`soldeazy_update_price` / `soldeazy_update_stock`~~：旧令牌写入入口，**已停用**。
 - `soldeazy_apply_plan`：**执行已冻结计划**——导出 → 批量改 → 一次上传 → 工序核对。
 - `soldeazy_create_datasheet`：创建数据表（从刊登复制，或从0建空表并填内容）。
 - `soldeazy_delete_datasheet`：按 Row ID 删除数据表。
@@ -394,11 +398,12 @@ src/ebay_mcp_server/
   providers/soldeazy_workbook.py
                          导出表改写与上传前逐格自检
   providers/soldeazy_pricing.py
-                         旧版算价内核（预览工具仍在用）
+                          【已停用】旧版算价内核（倍数反推/最低售价），
+                          仅留 DatasheetRow 与 Change 供搜索回显和漂移比对
   providers/soldeazy_stock.py
-                         运营库存表约定与解析
+                          运营库存表约定与解析
   providers/soldeazy_write.py
-                         旧版写入令牌与漂移检查
+                          旧版写入令牌与漂移检查（工具已停用，模块留档）
   sales_login.py         独立 Profile 的人工登录入口
   skills/*/SKILL.md      7 个可发现的工作流 Skill
   skill_registry.py      Skill 清单、摘要与安全资源读取

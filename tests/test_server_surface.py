@@ -23,7 +23,8 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "soldeazy_status",
         "soldeazy_open_login",
         "soldeazy_search_datasheet",
-        "soldeazy_preview_price_change",
+        # 2026-11-09 停用：旧「预览 → 令牌 → 写入」链路已整段注释
+        # "soldeazy_preview_price_change",
         "soldeazy_stock_template",
         "soldeazy_change_history",
         "soldeazy_list_shops",
@@ -37,14 +38,14 @@ def test_tool_surface_is_general_purpose_and_has_no_selection_or_recall_tools():
         "soldeazy_change_price",
         "soldeazy_change_stock",
         "soldeazy_reconcile_plan",
-        "soldeazy_preview_stock_change",
-        "soldeazy_update_price",
-        "soldeazy_update_stock",
+        # "soldeazy_preview_stock_change",
+        # "soldeazy_update_price",
+        # "soldeazy_update_stock",
     } <= tools
-    assert len(tools) == 34
+    assert len(tools) == 30
     assert not any("recall" in name or "selection" in name for name in tools)
-    # 写工具已注册但默认关闭：没有 SOLDEAZY_WRITE_ENABLED 时一律拒绝
-    assert {"soldeazy_update_price", "soldeazy_update_stock"} <= tools
+    # 旧写工具已下线：改价/改库存只走 soldeazy_change_price / _change_stock
+    assert not ({"soldeazy_update_price", "soldeazy_update_stock"} & tools)
     assert len(server.mcp._resource_manager._resources) == 7
 
 
@@ -88,33 +89,34 @@ async def test_title_validator_tool_uses_local_contract():
     assert result["success"] is True
     assert result["data"]["valid_for_delivery"] is True
 
-@pytest.mark.asyncio
-async def test_write_tools_fail_closed_when_the_flag_is_off():
-    for tool in (server.soldeazy_update_price, server.soldeazy_update_stock):
-        result = await tool("any-token")
-        assert result["success"] is False
-        assert result["error"]["code"] == "SOLDEAZY_WRITE_DISABLED"
-
-
-@pytest.mark.asyncio
-async def test_write_tool_rejects_an_unknown_token_even_when_enabled(monkeypatch):
-    import dataclasses
-
-    monkeypatch.setattr(
-        server, "settings", dataclasses.replace(server.settings, soldeazy_write_enabled=True)
-    )
-    result = await server.soldeazy_update_price("not-a-real-token")
-    assert result["success"] is False
-    assert result["error"]["code"] == "SOLDEAZY_TOKEN_INVALID"
-
-
-def test_write_tool_defaults_to_dry_run():
-    import inspect
-
-    signature = inspect.signature(server.soldeazy_update_price)
-    assert signature.parameters["dry_run"].default is True
-    signature = inspect.signature(server.soldeazy_update_stock)
-    assert signature.parameters["dry_run"].default is True
+# 2026-11-09 停用：旧的令牌写入工具已注释，以下三个用例随之停用（保留代码备查）。
+# @pytest.mark.asyncio
+# async def test_write_tools_fail_closed_when_the_flag_is_off():
+#     for tool in (server.soldeazy_update_price, server.soldeazy_update_stock):
+#         result = await tool("any-token")
+#         assert result["success"] is False
+#         assert result["error"]["code"] == "SOLDEAZY_WRITE_DISABLED"
+#
+#
+# @pytest.mark.asyncio
+# async def test_write_tool_rejects_an_unknown_token_even_when_enabled(monkeypatch):
+#     import dataclasses
+#
+#     monkeypatch.setattr(
+#         server, "settings", dataclasses.replace(server.settings, soldeazy_write_enabled=True)
+#     )
+#     result = await server.soldeazy_update_price("not-a-real-token")
+#     assert result["success"] is False
+#     assert result["error"]["code"] == "SOLDEAZY_TOKEN_INVALID"
+#
+#
+# def test_write_tool_defaults_to_dry_run():
+#     import inspect
+#
+#     signature = inspect.signature(server.soldeazy_update_price)
+#     assert signature.parameters["dry_run"].default is True
+#     signature = inspect.signature(server.soldeazy_update_stock)
+#     assert signature.parameters["dry_run"].default is True
 
 def test_shop_scope_collects_distinct_shops():
     found = {
