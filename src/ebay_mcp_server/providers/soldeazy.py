@@ -219,6 +219,7 @@ class SoldeazyBrowser:
             "browser_channel_configured": self.settings.soldeazy_browser_channel or "(内置 Chromium)",
             "browser_channel_used": self.browser_channel_used or "(未启动)",
             "headless": self.settings.soldeazy_headless,
+            "dirs": self.dir_health(),
         }
 
     async def _launch_context(self, directory: Path) -> Any:
@@ -298,6 +299,7 @@ class SoldeazyBrowser:
                 "Configure SOLDEAZY_PROFILE_DIR before opening the Soldeazy browser.",
             )
         directory.mkdir(parents=True, exist_ok=True)
+        self._ensure_temp_dirs()
 
         from playwright.async_api import async_playwright
 
@@ -308,6 +310,49 @@ class SoldeazyBrowser:
         self._page = pages[0] if pages else await self._context.new_page()
         self._page.set_default_timeout(self.settings.soldeazy_navigation_timeout * 1000)
         return self._page
+
+    @staticmethod
+    def _ensure_temp_dirs() -> None:
+        """TEMP/TMP 指向的目录必须先存在，否则 Playwright 解压内核时会 EPERM。
+
+        新机器常见坑：配置里写了 TEMP=C:\\...\\temp，但这个目录没人建。
+        """
+
+        for name in ("TEMP", "TMP", "TMPDIR"):
+            raw = (os.environ.get(name) or "").strip()
+            if not raw:
+                continue
+            try:
+                Path(raw).mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+
+    def dir_health(self) -> dict[str, Any]:
+        """报告 profile 与临时目录是否可写——部署到新机器时最常用的一次自检。"""
+
+        def probe(directory: Path | None) -> dict[str, Any]:
+            if directory is None:
+                return {"path": "", "exists": False, "writable": False}
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                probe_file = directory / ".write_probe"
+                probe_file.write_text("ok", encoding="utf-8")
+                probe_file.unlink()
+                writable = True
+            except OSError as exc:
+                return {
+                    "path": str(directory),
+                    "exists": directory.is_dir(),
+                    "writable": False,
+                    "error": f"{type(exc).__name__}: {exc}"[:150],
+                }
+            return {"path": str(directory), "exists": True, "writable": writable}
+
+        temp_raw = (os.environ.get("TEMP") or "").strip()
+        return {
+            "profile": probe(self.profile_dir),
+            "temp": probe(Path(temp_raw) if temp_raw else None),
+        }
 
     def _session_file(self) -> Path:
         return self.profile_dir / "session_cookies.json"
