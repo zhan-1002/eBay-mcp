@@ -132,3 +132,57 @@ def test_shop_guard_flags_export_from_other_shop() -> None:
     )
     problems = shop_problems(plan, matrix, {"id": "159", "name": "FUN"})
     assert any("没有计划所属" in item for item in problems)
+
+
+def test_apply_plan_signature_has_sync_switches():
+    import inspect
+
+    from ebay_mcp_server.providers.soldeazy_apply import apply_plan
+
+    params = inspect.signature(apply_plan).parameters
+    assert params["sync"].default is True
+    assert params["sync_price"].default is True
+    assert params["sync_quantity"].default is False
+
+
+def test_desktop_ua_has_no_headless_token():
+    from ebay_mcp_server.providers.soldeazy import DESKTOP_UA
+
+    assert "Headless" not in DESKTOP_UA
+    assert DESKTOP_UA.startswith("Mozilla/5.0")
+    assert "Chrome/" in DESKTOP_UA
+
+
+def test_sync_job_reports_count_mismatch():
+    """同步条数少于上传条数时要说明原因，而不是静默放过。"""
+
+    import asyncio
+
+    from ebay_mcp_server.providers import soldeazy_apply as mod
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def queue_jobs(self, limit: int = 20):
+            self.calls += 1
+            if self.calls == 1:
+                return [{"queue_job_idx": "old"}]
+            return [
+                {"queue_job_idx": "old", "queue_job_act": "DSUploadTask"},
+                {
+                    "queue_job_idx": "new",
+                    "queue_job_act": "DSDalignTask",
+                    "queue_job_res": {
+                        "total_items": "22",
+                        "success_msgs_count": "22",
+                        "failure_msgs_count": "0",
+                    },
+                },
+            ]
+
+    result = asyncio.run(mod._await_latest_job(FakeBrowser(), expected=25, attempts=2, wait_seconds=0))
+    assert result is not None
+    assert result["total_items"] == "22"
+    assert result["ok"] is False
+    assert any("没有在线刊登" in p for p in result["problems"])

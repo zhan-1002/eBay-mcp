@@ -252,13 +252,23 @@ def plan_rows(plan: ChangePlan, matrix: list[list[Any]]) -> list[int]:
     return sorted(keep)
 
 
-async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str, Any]:
-    """统一走「导出 → 批量改 → 一次上传」：整个计划只有一个上传请求。
+async def apply_plan(
+    browser: Any,
+    plan: ChangePlan,
+    workdir: Path,
+    *,
+    sync: bool = True,
+    sync_price: bool = True,
+    sync_quantity: bool = False,
+) -> dict[str, Any]:
+    """统一走「导出 → 批量改 → 一次上传 →（可选）同步上平台」。
 
     上传文件只保留**计划涉及的数据表**（``keep_rows``）——实测整份导出上传时，
     平台会把文件里每一行都 revise 一遍，没打算动的行会被覆盖成导出时的值。
 
     上传后按工序管理核对：``total_items`` 与计划的数据表数一致，且逐行成功。
+    ``sync=True`` 时再勾选同一批数据表做 BULK SYNC，并核对同步条数——
+    两者数量不一致是常态（没有在线刊登的数据表同步不了），但必须报出来。
     """
 
     from ebay_mcp_server.providers.soldeazy_workbook import (
@@ -316,6 +326,32 @@ async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str,
     # 等工序任务结束再核对，避免读到"处理中"
     queue = await _await_queue(browser, handle, expected_datasheets)
 
+    sync_result: dict[str, Any] | None = None
+    sync_problems: list[str] = []
+    if sync:
+        planned_ids = sorted({item.rowid for item in plan.items})
+        # 重新搜索后再勾选，BULK SYNC 只作用于勾选行
+        await browser.search("", plan.site)
+        selected = await browser.select_datasheets(planned_ids)
+        if selected != len(planned_ids):
+            sync_problems.append(
+                f"只勾选到 {selected} 个数据表，计划是 {len(planned_ids)} 个"
+            )
+        sync_result = await browser.sync_up_via_api(
+            price_postage=sync_price, quantity=sync_quantity
+        )
+        sync_queue = await _await_latest_job(browser, expected_datasheets)
+        if sync_queue:
+            sync_result["queue"] = sync_queue
+            sync_problems.extend(sync_queue.get("problems") or [])
+
+    if sync_result and not sync_problems:
+        sync_status = "ok"
+    elif sync_result:
+        sync_status = "partial"
+    else:
+        sync_status = "skipped"
+
     append_audit(
         audit,
         plan.plan_id,
@@ -323,14 +359,14 @@ async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str,
         {
             "success": bool(queue.get("ok")),
             "applied": [{"rows": len(changes), "datasheets": expected_datasheets}],
-            "warnings": queue.get("problems") or [],
+            "warnings": (queue.get("problems") or []) + sync_problems,
         },
     )
     return {
         "plan_id": plan.plan_id,
-        "ok": bool(queue.get("ok")),
+        "ok": bool(queue.get("ok")) and not sync_problems,
         "channel": "upload",
-        "requests": 2,
+        "requests": 4 if sync else 2,
         "items": len(changes),
         "rows_touched": len(changes),
         "uploaded_rows": report.get("rows"),
@@ -339,6 +375,9 @@ async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str,
         "file": report["path"],
         "handle": handle,
         "queue": queue,
+        "sync": sync_status,
+        "sync_result": sync_result,
+        "sync_problems": sync_problems,
         "audit": str(audit),
     }
 
@@ -413,6 +452,55 @@ async def _await_queue(
         "rowids": [row["rowid"] for row in rows],
         "problems": problems,
     }
+
+
+async def _await_latest_job(
+    browser: Any,
+    expected: int,
+    *,
+    attempts: int = 10,
+    wait_seconds: float = 6.0,
+) -> dict[str, Any] | None:
+    """同步接口不返回任务号，只能等工序管理里冒出新的同步任务。
+
+    以"本轮之前见过的最新 job_idx"为基线，找比它更新的那条。
+    """
+
+    try:
+        baseline = {str(job.get("queue_job_idx")) for job in await browser.queue_jobs(limit=20)}
+    except Exception:  # noqa: BLE001 - 拿不到基线就不做比对
+        baseline = set()
+
+    for _ in range(attempts):
+        try:
+            jobs = await browser.queue_jobs(limit=20)
+        except Exception:  # noqa: BLE001
+            jobs = []
+        fresh = [job for job in jobs if str(job.get("queue_job_idx")) not in baseline]
+        if fresh:
+            job = fresh[0]
+            res = job.get("queue_job_res") or {}
+            total = str(res.get("total_items", ""))
+            failed = str(res.get("failure_msgs_count", "0"))
+            problems: list[str] = []
+            if failed not in {"0", ""}:
+                problems.append(f"同步任务有 {failed} 条失败")
+            if total and total != str(expected):
+                problems.append(
+                    f"同步了 {total} 个数据表，上传的是 {expected} 个"
+                    "（差额通常是这些数据表没有在线刊登，同步不处理）"
+                )
+            return {
+                "ok": not problems,
+                "job_id": str(job.get("queue_job_idx")),
+                "act": job.get("queue_job_act"),
+                "total_items": total,
+                "success": str(res.get("success_msgs_count", "")),
+                "failed": failed,
+                "problems": problems,
+            }
+        await asyncio.sleep(wait_seconds)
+    return None
 
 
 async def reconcile(

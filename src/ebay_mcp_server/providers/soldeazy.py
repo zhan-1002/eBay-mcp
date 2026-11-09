@@ -34,6 +34,14 @@ from ebay_mcp_server.errors import EbayMcpError
 
 BASE_URL = "https://stiger.soldeazy.com"
 LIST_PATH = "/app/soldeazy/datasheet/dsheet_list?default_search_profile"
+# 无头模式默认的 Chrome UA 会带 HeadlessChrome 字样，
+# 站点可能把会话绑在 UA 上，导致「有头登录完、无头用不了」。
+# 这里统一用常规桌面 UA，切换模式时登录态才能复用。
+DESKTOP_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
 LOGIN_PATH = "/app/soldeazy/login"
 UPLOAD_PATH = "/app/soldeazy/upload-datasheet"
 
@@ -243,6 +251,9 @@ class SoldeazyBrowser:
                 "args": ["--disable-blink-features=AutomationControlled"],
                 "locale": "zh-CN",
             }
+            if self.settings.soldeazy_headless:
+                # 固定 UA：否则无头用 HeadlessChrome UA，站点会把登录态当成新会话
+                kwargs["user_agent"] = DESKTOP_UA
             if step["executable"]:
                 kwargs["executable_path"] = step["executable"]
             elif step["channel"]:
@@ -873,6 +884,38 @@ class SoldeazyBrowser:
             ) from exc
 
         return {"success": True, "path": str(path), "file": path.name}
+
+    async def select_datasheets(self, rowids: Sequence[str]) -> int:
+        """只勾选指定的数据表（BULK SYNC 作用于勾选行）。返回勾选数量。"""
+
+        wanted = {str(item).strip() for item in rowids if str(item).strip()}
+        if not wanted:
+            return 0
+        page = await self._ensure_page()
+        return await page.evaluate(
+            """
+            (wanted) => {
+              const set = new Set(wanted);
+              let count = 0;
+              document.querySelectorAll('#tbl_dSheet tr').forEach((r) => {
+                const box = r.querySelector('input[type=checkbox]');
+                if (!box) return;
+                const cells = Array.from(r.cells).map((c) => (c.innerText || '').trim());
+                const id = cells.find((t) => set.has(t));
+                if (id && !box.checked) {
+                  box.click();
+                  count += 1;
+                } else if (id && box.checked) {
+                  count += 1;
+                } else if (!id && box.checked) {
+                  box.click();
+                }
+              });
+              return count;
+            }
+            """,
+            list(wanted),
+        )
 
     async def sync_up_via_api(
         self, *, price_postage: bool = True, quantity: bool = False

@@ -1340,7 +1340,13 @@ async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=REMOTE_WRITE)
-async def soldeazy_apply_plan(plan_id: str, dry_run: bool = True) -> dict[str, Any]:
+async def soldeazy_apply_plan(
+    plan_id: str,
+    dry_run: bool = True,
+    sync: bool = True,
+    sync_price: bool = True,
+    sync_quantity: bool = False,
+) -> dict[str, Any]:
     """Execute a frozen plan: export → batch edit → one upload → queue check.
 
     The plan file is never modified; every attempt is appended to an audit log.
@@ -1368,7 +1374,10 @@ async def soldeazy_apply_plan(plan_id: str, dry_run: bool = True) -> dict[str, A
             return success("soldeazy_apply_plan", "soldeazy", {**scope, "dry_run": True})
 
         _require_write_enabled()
-        result = await apply_plan(soldeazy, plan, directory)
+        result = await apply_plan(
+            soldeazy, plan, directory,
+            sync=bool(sync), sync_price=bool(sync_price), sync_quantity=bool(sync_quantity),
+        )
         return success(
             "soldeazy_apply_plan",
             "soldeazy",
