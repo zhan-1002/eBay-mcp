@@ -115,24 +115,43 @@ Soldeazy 没有公开接口文档，生产链路是「导出 xlsx → 离线改 
 `SOLDEAZY_BROWSER_CHANNEL=chrome` 的含义是**"用本机安装的 Chrome"**——
 代码里没有任何硬编码的浏览器路径，Chrome 的位置由 Playwright 向系统查询。
 
-启动时会按顺序尝试，前一个失败自动回退：
+启动逻辑在 `providers/soldeazy_browser.py`，按下面的顺序逐个尝试，
+前一个失败自动进下一个：
 
 ```
-1. 配置的 channel（默认 chrome）   本机装了 Chrome 就走这条
-2. chromium                        Playwright 自带的完整 Chromium
-3. Playwright 默认                 无头时用 headless shell
+1. 配置的 channel（默认 chrome）
+2. msedge                    Windows 10/11 自带，几乎一定存在
+3. chromium                  Playwright 标准通道（新无头模式）
+4. Playwright 默认内核        无头时是 headless shell
+5. 扫本机已下载的 Chromium     %LOCALAPPDATA% / %APPDATA% / ~/.cache 下的 ms-playwright
+6. 扫手动安装的 Chrome/Edge   Program Files、Program Files (x86)、LOCALAPPDATA
 ```
 
-三条都不通时，错误里会**逐条列出失败原因**（哪个可执行文件不存在），
-不会只说一句"启动失败"。
+**第 5 条是关键**：Playwright 升级后常出现"它要 1243 版、本机只有 1223 版"的
+版本不匹配，报错形如 `Executable doesn't exist at ...chromium-1243`。
+这条兜底会直接拿本机已有的版本启动，不受版本号影响。
 
-**目标机器没装 Chrome 怎么办**：执行一次
+启动成功后会把选择写进 `<profile>/browser_choice.json`，下次优先用它，
+不必每次开机把六个候选都试一遍。
+
+六个都不通时，错误里会列出**试过哪些候选、每条的具体原因**，
+不会只说一句"启动失败"：
+
+```json
+{
+  "code": "SOLDEAZY_BROWSER_LAUNCH_FAILED",
+  "details": {
+    "tried": ["chrome", "msedge", "chromium", "Playwright 默认内核", "..."],
+    "attempts": ["chrome: Executable doesn't exist at ...", "msedge: ..."]
+  }
+}
+```
+
+**最省事的修法**（一般不用做，Windows 有 Edge 兜底）：
 
 ```powershell
 uv run playwright install chromium
 ```
-
-之后就会自动回退到第 2 条，不需要改配置。
 
 **常见报错对照**
 

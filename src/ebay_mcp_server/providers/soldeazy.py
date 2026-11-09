@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -205,83 +206,51 @@ class SoldeazyBrowser:
         }
 
     async def _launch_context(self, directory: Path) -> Any:
-        """启动持久化上下文：先试配置的 channel，失败自动回退到内置 Chromium。
+        """按候选计划逐个尝试启动浏览器，成功后记住选择。
 
-        站点本身不挑浏览器，``channel=chrome`` 只是「用本机装的 Chrome」。
-        目标机器没装 Chrome 时不该直接失败——内置 Chromium 一样能用。
+        站点本身不挑浏览器；换机器、没装 Chrome、Playwright 版本不匹配，
+        都不该让整条链路失败。
         """
 
-        channel = (self.settings.soldeazy_browser_channel or "").strip()
-        # 依次尝试：配置的 channel → 完整 Chromium（新无头模式）→ Playwright 默认
-        candidates = ([channel] if channel else []) + ["chromium", ""]
-        errors: list[str] = []
-        seen: set[str] = set()
+        from ebay_mcp_server.providers import soldeazy_browser as browser_probe
 
-        for candidate in candidates:
-            if candidate in seen:
-                continue
-            seen.add(candidate)
-            label = candidate or "默认内核"
+        configured = (self.settings.soldeazy_browser_channel or "").strip()
+        plan = browser_probe.build_plan(configured)
+        plan = browser_probe.reorder(plan, browser_probe.load_cache(directory))
+
+        errors: list[str] = []
+        for step in plan:
+            label = step["label"]
+            kwargs: dict[str, Any] = {
+                "headless": self.settings.soldeazy_headless,
+                "args": ["--disable-blink-features=AutomationControlled"],
+                "locale": "zh-CN",
+            }
+            if step["executable"]:
+                kwargs["executable_path"] = step["executable"]
+            elif step["channel"]:
+                kwargs["channel"] = step["channel"]
             try:
                 context = await self._playwright.chromium.launch_persistent_context(
-                    str(directory),
-                    headless=self.settings.soldeazy_headless,
-                    channel=candidate or None,
-                    args=["--disable-blink-features=AutomationControlled"],
-                    locale="zh-CN",
+                    str(directory), **kwargs
                 )
                 self.browser_channel_used = label
+                browser_probe.save_cache(directory, step)
                 return context
             except Exception as exc:  # noqa: BLE001 - 换下一个候选
-                errors.append(f"{label}: {str(exc).splitlines()[0][:160]}")
-
-        # 最后兜底：直接扫本机已下载的 Chromium（不受版本号不匹配影响）
-        for executable in self._installed_chromium_paths():
-            try:
-                context = await self._playwright.chromium.launch_persistent_context(
-                    str(directory),
-                    headless=self.settings.soldeazy_headless,
-                    executable_path=str(executable),
-                    args=["--disable-blink-features=AutomationControlled"],
-                    locale="zh-CN",
-                )
-                self.browser_channel_used = f"已装 Chromium {executable.parent.parent.name}"
-                return context
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{executable.parent.parent.name}: {str(exc).splitlines()[0][:120]}")
+                errors.append(f"{label}: {str(exc).splitlines()[0][:150]}")
 
         raise EbayMcpError(
             "SOLDEAZY_BROWSER_LAUNCH_FAILED",
-            "浏览器启动失败：本机 Chrome 与已下载的 Chromium 都不可用。"
-            "请安装 Chrome，或执行 `uv run playwright install chromium`。",
-            details={"attempts": errors},
+            "浏览器启动失败：本机没有可用的 Chrome / Edge / Chromium。"
+            "最省事的修法是执行 uv run playwright install chromium，"
+            "装好后重试即可；也可以安装 Chrome 或 Edge。",
+            details={
+                "tried": [step["label"] for step in plan],
+                "attempts": errors,
+                "hint": "LOCALAPPDATA=" + (os.environ.get("LOCALAPPDATA") or "(未设置)"),
+            },
         )
-
-    @staticmethod
-    def _installed_chromium_paths() -> list[Path]:
-        """扫本机 ms-playwright 目录下已下载的 Chromium（版本号可能与当前 playwright 不匹配）。"""
-
-        import os
-
-        root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
-        base = root / "ms-playwright"
-        if not base.is_dir():
-            return []
-
-        found: list[tuple[int, Path]] = []
-        for entry in base.glob("chromium-*"):
-            if not entry.is_dir() or "headless" in entry.name:
-                continue
-            try:
-                revision = int(entry.name.split("-")[1])
-            except (IndexError, ValueError):
-                continue
-            for relative in ("chrome-win64/chrome.exe", "chrome-win/chrome.exe"):
-                candidate = entry / relative
-                if candidate.is_file():
-                    found.append((revision, candidate))
-        found.sort(reverse=True)  # 版本号大的优先
-        return [path for _revision, path in found]
 
     async def _ensure_page(self) -> Any:
         if self._page is not None:
