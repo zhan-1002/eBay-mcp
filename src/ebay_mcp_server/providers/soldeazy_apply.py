@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem, new_plan_id
+
+# 套装后缀：SKU 尾巴上的 " x2" / "x4"。单件没有这个后缀。
+PACK_SUFFIX = re.compile(r"\s*[xX]\s*(\d+)\s*$")
 
 PRICE = "price"
 QTY = "qty"
@@ -27,6 +31,19 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def split_pack(sku: str) -> tuple[str, int | None]:
+    """把 ``ZMHB0004US x4`` 拆成 ``("ZMHB0004US", 4)``；不是套装返回 ``(sku, None)``。
+
+    只看 SKU 尾巴上的 ``xN``，不猜件数——件数由用户显式写出来。
+    """
+
+    text = str(sku or "").strip()
+    match = PACK_SUFFIX.search(text)
+    if not match:
+        return text, None
+    return text[: match.start()].strip(), int(match.group(1))
+
+
 def build_items(
     live: dict[tuple[str, str], dict[str, Any]],
     kind: str,
@@ -34,14 +51,16 @@ def build_items(
 ) -> tuple[list[PlanItem], dict[str, Any]]:
     """按用户的 ``{SKU: 数值}`` 生成计划条目。
 
-    - 改价：SKU 指**子体**，精确命中；精确不到才退化成前缀匹配，
-      前缀命中多个不同子体时报冲突，不猜。
+    - 改价：**基础 SKU 只改单件，跳过套装**。套装（``ZMFL0012 x2``）只有用户
+      显式写出 ``xN`` 时才改。绝不把套装当成单件，也不因"只找到一个候选"
+      就替用户改套装。
     - 改库存：SKU 指**母体**，命中它下面的所有行（父行 + 全部子体行）。
     """
 
     items: list[PlanItem] = []
     missing: list[str] = []
     conflicts: dict[str, list[str]] = {}
+    skipped_packs: dict[str, list[str]] = {}
 
     field = PRICE if kind == "price" else QTY
     key = "price" if kind == "price" else "qty"
@@ -53,18 +72,58 @@ def build_items(
 
         for raw_sku, target in targets.items():
             wanted = str(raw_sku).strip()
-            hits = by_sku.get(wanted, [])
-            if not hits:
-                candidates = sorted({sku for sku in by_sku if sku.startswith(wanted)})
-                if len(candidates) == 1:
-                    hits = by_sku[candidates[0]]
-                elif len(candidates) > 1:
-                    conflicts[wanted] = candidates
-                    continue
-                else:
-                    missing.append(wanted)
-                    continue
+            wanted_base, wanted_pack = split_pack(wanted)
+
+            if wanted_pack is not None:
+                # 用户显式指定套装：只改这一个，容忍 "BASE x2" / "BASEx2" 空格差异
+                hits = by_sku.get(wanted, [])
+                if not hits:
+                    same_pack = sorted(
+                        sku for sku in by_sku if split_pack(sku) == (wanted_base, wanted_pack)
+                    )
+                    if len(same_pack) == 1:
+                        hits = by_sku[same_pack[0]]
+                    elif len(same_pack) > 1:
+                        conflicts[wanted] = same_pack
+                        continue
+                    else:
+                        missing.append(wanted)
+                        continue
+            else:
+                # 基础 SKU：只改单件
+                hits = by_sku.get(wanted, [])
+                if not hits:
+                    # 允许站点后缀之类的差异，但候选里必须全是「非套装」
+                    units = sorted(
+                        sku
+                        for sku in by_sku
+                        if split_pack(sku)[1] is None and sku.startswith(wanted)
+                    )
+                    if len(units) == 1:
+                        hits = by_sku[units[0]]
+                    elif len(units) > 1:
+                        conflicts[wanted] = units
+                        continue
+                    else:
+                        only_packs = sorted(
+                            sku for sku in by_sku if split_pack(sku)[0] == wanted
+                        )
+                        missing.append(wanted)
+                        if only_packs:
+                            skipped_packs[wanted] = only_packs
+                        continue
+                packs_of_base = sorted(
+                    sku for sku in by_sku if split_pack(sku)[0] == wanted
+                    and split_pack(sku)[1] is not None
+                )
+                if packs_of_base:
+                    skipped_packs[wanted] = packs_of_base
+
             for rowid, sku in hits:
+                # 防御：基础 SKU 的目标绝不落到套装行
+                if wanted_pack is None and split_pack(sku)[1] is not None:
+                    skipped_packs.setdefault(wanted, sorted({sku}))
+                    continue
                 record = live[(rowid, sku)]
                 old = _num(record[key])
                 if old is None:
@@ -96,7 +155,12 @@ def build_items(
                     PlanItem(rowid=rowid, sku=sku, field=field, old=old, new=float(target))
                 )
 
-    report = {"missing": sorted(missing), "conflicts": conflicts}
+    report = {
+        "missing": sorted(missing),
+        "conflicts": conflicts,
+        # 基础 SKU 目标下发现但**没有改**的套装，让调用方看得见
+        "skipped_packs": skipped_packs,
+    }
     return items, report
 
 

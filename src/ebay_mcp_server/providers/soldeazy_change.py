@@ -84,7 +84,7 @@ def compact_plan_report(
     }
 
     if extra:
-        for key in ("missing", "conflicts", "unmatched_targets", "plan_sha256"):
+        for key in ("missing", "conflicts", "unmatched_targets", "skipped_packs", "plan_sha256"):
             if key in extra and extra[key]:
                 report[key] = extra[key]
 
@@ -160,6 +160,7 @@ async def run_change(
                 "hint": (
                     "检查 SKU 写法；如果生产账号里这些是未刊登，"
                     "需要 include_unlisted=true 才会被查到。"
+                    "如果只有套装，请显式写 'SKU x2' 才会改套装。"
                 ),
             }
 
@@ -185,6 +186,7 @@ async def run_change(
             "items": len(items),
             "datasheets": len({item.rowid for item in items}),
             "only_listed": only_listed,
+            "skipped_packs": build_report.get("skipped_packs") or {},
             "sample": [item.as_dict() for item in items[:5]],
             "hint": "确认无误后传 dry_run=false 执行",
         }
@@ -213,6 +215,7 @@ async def run_change(
         extra={
             "missing": (build_report.get("missing") or [])[:MAX_PROBLEMS],
             "unmatched_targets": len(build_report.get("missing") or []),
+            "skipped_packs": build_report.get("skipped_packs") or {},
             "plan_sha256": digest,
         },
     )

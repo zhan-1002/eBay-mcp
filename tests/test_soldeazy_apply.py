@@ -213,3 +213,77 @@ def test_trim_ids_caps_token_cost():
     raw = json.dumps(ids)
     trimmed = json.dumps(_trim_ids(ids), ensure_ascii=False)
     assert len(trimmed) < len(raw) / 20
+
+
+def _live_rows(rows):
+    return {(r["rowid"], r["sku"]): r for r in rows}
+
+
+MIXED_ROWS = [
+    {"rowid": "1001", "sku": "ZMFL0012", "parent": "ZMFL0012", "price": 24.9, "qty": 100},
+    {"rowid": "1002", "sku": "ZMFL0012 x2", "parent": "ZMFL0012", "price": 48.9, "qty": 100},
+    {"rowid": "1003", "sku": "ZMFL0012 x4", "parent": "ZMFL0012", "price": 95.9, "qty": 100},
+]
+
+
+def test_split_pack_recognises_suffix():
+    from ebay_mcp_server.providers.soldeazy_apply import split_pack
+
+    assert split_pack("ZMHB0004US x4") == ("ZMHB0004US", 4)
+    assert split_pack("ZMFL0012x2") == ("ZMFL0012", 2)
+    assert split_pack("ZMFL0012") == ("ZMFL0012", None)
+    assert split_pack("EF-1374310") == ("EF-1374310", None)
+
+
+def test_base_sku_changes_unit_only_and_skips_packs():
+    """基础 SKU 只改单件，套装不动——这是业务明确要求。"""
+
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    items, report = build_items(_live_rows(MIXED_ROWS), "price", {"ZMFL0012": 26.0})
+
+    assert [i.sku for i in items] == ["ZMFL0012"]
+    assert items[0].new == 26.0
+    assert report["skipped_packs"] == {"ZMFL0012": ["ZMFL0012 x2", "ZMFL0012 x4"]}
+
+
+def test_explicit_pack_changes_only_that_pack():
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    items, report = build_items(_live_rows(MIXED_ROWS), "price", {"ZMFL0012 x2": 58.9})
+
+    assert [i.sku for i in items] == ["ZMFL0012 x2"]
+    assert items[0].new == 58.9
+    assert report["skipped_packs"] == {}
+
+
+def test_explicit_pack_tolerates_missing_space():
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    items, _report = build_items(_live_rows(MIXED_ROWS), "price", {"ZMFL0012x4": 100.0})
+
+    assert [i.sku for i in items] == ["ZMFL0012 x4"]
+
+
+def test_base_sku_never_falls_back_to_single_pack():
+    """只有套装、没有单件时，基础 SKU 必须报缺失，不能替用户改套装。"""
+
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    only_packs = _live_rows(MIXED_ROWS[1:])
+    items, report = build_items(only_packs, "price", {"ZMFL0012": 30.0})
+
+    assert items == []
+    assert report["missing"] == ["ZMFL0012"]
+    assert report["skipped_packs"] == {"ZMFL0012": ["ZMFL0012 x2", "ZMFL0012 x4"]}
+
+
+def test_two_targets_unit_and_pack_together():
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    items, _report = build_items(
+        _live_rows(MIXED_ROWS), "price", {"ZMFL0012": 26.0, "ZMFL0012 x2": 52.0}
+    )
+
+    changed = {i.sku: i.new for i in items}
+    assert changed == {"ZMFL0012": 26.0, "ZMFL0012 x2": 52.0}
