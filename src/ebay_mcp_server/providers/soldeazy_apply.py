@@ -326,6 +326,14 @@ async def apply_plan(
     # 等工序任务结束再核对，避免读到"处理中"
     queue = await _await_queue(browser, handle, expected_datasheets)
 
+    busy = await _active_jobs(browser)
+    busy_note = (
+        f"工序队列还有 {len(busy)} 个任务在执行中（{', '.join(str(j.get('queue_job_idx')) for j in busy[:5])}），"
+        "本次会排队，耗时会变长"
+        if busy
+        else ""
+    )
+
     sync_result: dict[str, Any] | None = None
     sync_problems: list[str] = []
     if sync:
@@ -340,6 +348,12 @@ async def apply_plan(
         sync_result = await browser.sync_up_via_api(
             price_postage=sync_price, quantity=sync_quantity
         )
+        # 同步接口会回传全部勾选行，条数一多就是上万 token——只留样本
+        if isinstance(sync_result, dict) and isinstance(sync_result.get("table_row_ids"), list):
+            ids = sync_result["table_row_ids"]
+            sync_result["table_row_ids"] = ids[:20]
+            sync_result["table_row_ids_total"] = len(ids)
+            sync_result["table_row_ids_truncated"] = len(ids) > 20
         sync_queue = await _await_latest_job(browser, expected_datasheets)
         if sync_queue:
             sync_result["queue"] = sync_queue
@@ -378,6 +392,7 @@ async def apply_plan(
         "sync": sync_status,
         "sync_result": sync_result,
         "sync_problems": sync_problems,
+        "queue_busy": busy_note,
         "audit": str(audit),
     }
 
@@ -449,9 +464,40 @@ async def _await_queue(
         "success": success,
         "failed": failed,
         "expected_datasheets": expected_datasheets,
-        "rowids": [row["rowid"] for row in rows],
+        "rowids": [row["rowid"] for row in rows][:20],
+        "rowids_total": len(rows),
+        "rowids_truncated": len(rows) > 20,
         "problems": problems,
     }
+
+
+def _trim_ids(ids: list[str], limit: int = 20) -> dict[str, Any]:
+    """回传时只带前 N 个 id。
+
+    实战里单批最多出现过 2557 条，完整列表在返回里重复两次，
+    光这一项就吃掉 1.4 万 token，而且对调用方没有价值。
+    """
+
+    sample = ids[:limit]
+    return {
+        "rowids": sample,
+        "rowids_total": len(ids),
+        "rowids_truncated": len(ids) > limit,
+    }
+
+
+async def _active_jobs(browser: Any) -> list[dict[str, Any]]:
+    """列出仍在执行中的工序任务（没有结束时间的）。"""
+
+    try:
+        jobs = await browser.queue_jobs(limit=30)
+    except Exception:  # noqa: BLE001 - 查不到不算错误
+        return []
+    return [
+        job
+        for job in jobs
+        if not str(job.get("queue_job_enddate") or "").strip()
+    ]
 
 
 async def _await_latest_job(

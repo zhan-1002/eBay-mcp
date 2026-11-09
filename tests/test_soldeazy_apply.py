@@ -186,3 +186,30 @@ def test_sync_job_reports_count_mismatch():
     assert result["total_items"] == "22"
     assert result["ok"] is False
     assert any("没有在线刊登" in p for p in result["problems"])
+
+
+def test_trim_ids_keeps_sample_and_total():
+    from ebay_mcp_server.providers.soldeazy_apply import _trim_ids
+
+    ids = [str(4523000 + i) for i in range(2557)]
+    trimmed = _trim_ids(ids)
+    assert len(trimmed["rowids"]) == 20
+    assert trimmed["rowids_total"] == 2557
+    assert trimmed["rowids_truncated"] is True
+
+    small = _trim_ids(["1", "2"])
+    assert small["rowids"] == ["1", "2"]
+    assert small["rowids_truncated"] is False
+
+
+def test_trim_ids_caps_token_cost():
+    """2557 条完整列表约 1.4 万 token，截断后应降到百位数以内。"""
+
+    import json
+
+    from ebay_mcp_server.providers.soldeazy_apply import _trim_ids
+
+    ids = [str(4523000 + i) for i in range(2557)]
+    raw = json.dumps(ids)
+    trimmed = json.dumps(_trim_ids(ids), ensure_ascii=False)
+    assert len(trimmed) < len(raw) / 20
