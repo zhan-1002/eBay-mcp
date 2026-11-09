@@ -237,3 +237,32 @@ def test_listed_status_selector_exists():
     from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
 
     assert hasattr(SoldeazyBrowser, "_select_status_listed")
+
+
+def test_number_takes_amount_before_semicolon():
+    """运费列常见 `0;8` 这种写法，取分号前那一段。"""
+
+    from ebay_mcp_server.providers.soldeazy import _number
+
+    assert _number("0;8") == 0.0
+    assert _number("0;8.5") == 0.0
+    assert _number("0；8") == 0.0
+    assert _number("1.25;9") == 1.25
+    assert _number("12.50") == 12.5
+    assert _number("-") is None
+    assert _number("") is None
+
+
+def test_search_clears_date_filter_and_defaults_to_listed():
+    """规则 1 与规则 2：状态默认已刊登，修改日期默认留空。"""
+
+    import inspect
+
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    assert hasattr(SoldeazyBrowser, "_clear_date_filter")
+    assert hasattr(SoldeazyBrowser, "_select_status_listed")
+
+    source = inspect.getsource(SoldeazyBrowser.search)
+    assert "_clear_date_filter" in source
+    assert "_select_scope_whole_result" in source

@@ -188,6 +188,7 @@ class SoldeazyBrowser:
         self._last_query: str = ""
         self._last_site: str = ""
         self._last_status: str = ""
+        self._last_date: str = ""
         self.browser_channel_used: str = ""
         self.session_save_error: str = ""
         self.session_cookie_count: int = 0
@@ -573,6 +574,8 @@ class SoldeazyBrowser:
             shop = shop or ((self.active_shop or {}).get("name") or "")
             if shop:
                 await self._select_shop(shop)
+            # 修改日期默认留空，避免沿用上次筛选导致漏数据
+            await self._clear_date_filter()
             # 改价/改库存只对「已刊登」有意义：未刊登的数据表同步不到 eBay，
             # 传上去只会让上传数和同步数对不上。
             if only_listed:
@@ -614,6 +617,7 @@ class SoldeazyBrowser:
                 "shop": shop,
                 "search": sku_terms,
                 "status_filter": self._last_status or ("已刊登" if only_listed else "不限"),
+                "date_filter": self._last_date or "(空)",
                 "columns": header,
                 "row_count": len(records),
                 "rows": records,
@@ -752,6 +756,30 @@ class SoldeazyBrowser:
             if await scope.count():
                 await scope.select_option("whole_result", timeout=5000)
         except Exception:  # noqa: BLE001 - 只是尽力设置
+            pass
+
+    async def _clear_date_filter(self) -> None:
+        """修改日期默认留空，不沿用页面上次的值。找不到就跳过。"""
+
+        page = await self._ensure_page()
+        try:
+            cleared = await page.evaluate(
+                """
+                () => {
+                  const sel = Array.from(document.querySelectorAll('select'))
+                    .find((x) => x.name === 'listdate');
+                  if (!sel) return null;
+                  const blank = Array.from(sel.options).find((o) => !(o.value || '').trim());
+                  if (!blank) return null;
+                  sel.value = blank.value;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  return (blank.textContent || '').trim();
+                }
+                """
+            )
+            if cleared is not None:
+                self._last_date = str(cleared)
+        except Exception:  # noqa: BLE001 - 尽力而为，不阻断搜索
             pass
 
     async def _select_status_listed(self) -> None:
@@ -1638,7 +1666,14 @@ def resolve_columns(header: Sequence[str]) -> dict[str, int]:
 
 
 def _number(text: str) -> float | None:
-    cleaned = (text or "").strip().replace(",", "").replace("£", "").replace("€", "")
+    """解析金额。``0;8`` 这种带分号的取分号前那一段（运费列常见格式）。"""
+
+    raw = (text or "").strip()
+    for splitter in (";", "；"):
+        if splitter in raw:
+            raw = raw.split(splitter, 1)[0]
+            break
+    cleaned = raw.strip().replace(",", "").replace("£", "").replace("€", "")
     if not cleaned or cleaned in {"-", "--"}:
         return None
     try:
