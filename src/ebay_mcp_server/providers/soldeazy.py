@@ -256,6 +256,21 @@ class SoldeazyBrowser:
             except Exception as exc:  # noqa: BLE001 - 换下一个候选
                 errors.append(f"{label}: {str(exc).splitlines()[0][:150]}")
 
+        # 分清「没装浏览器」和「装了但起不来（权限/沙箱/被占用）」，别用一句话糊弄过去
+        joined = " ".join(errors)
+        if any(
+            word in joined
+            for word in ("Permission", "EPERM", "Access is denied", "拒绝访问", "EACCES")
+        ):
+            raise EbayMcpError(
+                "SOLDEAZY_BROWSER_LAUNCH_DENIED",
+                "浏览器已找到，但启动被拒绝（权限/沙箱）。"
+                f"进程需要对 profile 目录 {directory} 和临时目录有写权限；"
+                "如果 MCP 跑在沙箱里，请把这两个目录加入白名单，"
+                "或把它们指到工作区内的可写路径。",
+                details={"attempts": errors},
+            )
+
         raise EbayMcpError(
             "SOLDEAZY_BROWSER_LAUNCH_FAILED",
             "浏览器启动失败：本机没有可用的 Chrome / Edge / Chromium。"

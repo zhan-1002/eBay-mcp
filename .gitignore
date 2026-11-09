@@ -30,3 +30,6 @@ sales-profile/
 .live-verify/
 .live-*/
 pytest-of-*/
+
+# WorkBuddy/沙箱环境的 Soldeazy 运行数据（含登录态）
+.soldeazy-data/
