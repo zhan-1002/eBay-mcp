@@ -28,9 +28,12 @@ def compact_plan_report(
     reconcile: dict[str, Any] | None,
     kind: str,
     verbose: bool = False,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把四步结果压成一个判决。
 
+    ``extra`` 用来带「没匹配上的目标」「前缀歧义」这类必须让调用方知道的信息——
+    压缩返回不能把它们吞掉。
     ``verbose=True`` 时才附带逐条明细——给确实要排查的场景用。
     """
 
@@ -79,6 +82,11 @@ def compact_plan_report(
         "problems": problems[:MAX_PROBLEMS],
         "problems_total": len(problems),
     }
+
+    if extra:
+        for key in ("missing", "conflicts", "unmatched_targets", "plan_sha256"):
+            if key in extra and extra[key]:
+                report[key] = extra[key]
 
     if verbose:
         report["detail"] = {
@@ -159,7 +167,12 @@ async def run_change(
             "hint": "确认无误后传 dry_run=false 执行",
         }
 
-    freeze(plan_dir, plan)
+    frozen = freeze(plan_dir, plan)
+    # 冻结后回读一次：确认落盘内容和哈希一致，和分步路径同等强度
+    load_verified = deps["load_verified"]
+    verified_plan, digest = load_verified(plan_dir, plan.plan_id)
+    plan = verified_plan
+
     applied = await apply_plan(
         browser,
         plan,
@@ -170,5 +183,14 @@ async def run_change(
     )
     reconcile_result = await reconcile(browser, plan, plan_dir)
     return compact_plan_report(
-        plan, applied=applied, reconcile=reconcile_result, kind=kind, verbose=verbose
+        plan,
+        applied=applied,
+        reconcile=reconcile_result,
+        kind=kind,
+        verbose=verbose,
+        extra={
+            "missing": (build_report.get("missing") or [])[:MAX_PROBLEMS],
+            "unmatched_targets": len(build_report.get("missing") or []),
+            "plan_sha256": digest,
+        },
     )

@@ -59,3 +59,44 @@ def test_compact_report_problems_are_capped():
     assert len(report["problems"]) == MAX_PROBLEMS
     # 100 条队列问题 + 1 条“执行未通过”总述
     assert report["problems_total"] == 101
+
+
+def test_compact_report_surfaces_missing_targets():
+    """压缩返回不能把"没匹配上的目标"吞掉——这是校对能力的一部分。"""
+
+    from ebay_mcp_server.providers.soldeazy_change import compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="price-z", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+        items=[PlanItem("4512957", "JJPC0029", "price", 21.9, 23.0)],
+    )
+    applied = {"ok": True, "sync": "ok", "sync_problems": [], "queue": {"ok": True}}
+    reconciled = {"ok": True, "matched": 1, "items": 1}
+
+    report = compact_plan_report(
+        plan, applied=applied, reconcile=reconciled, kind="price",
+        extra={"missing": ["NOT-EXIST"], "unmatched_targets": 1, "plan_sha256": "a" * 64},
+    )
+    assert report["ok"] is True
+    assert report["missing"] == ["NOT-EXIST"]
+    assert report["unmatched_targets"] == 1
+    assert report["plan_sha256"] == "a" * 64
+
+
+def test_compact_report_omits_empty_extras():
+    from ebay_mcp_server.providers.soldeazy_change import compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US", shop={}, created_at="x",
+        items=[PlanItem("1", "S", "price", 1.0, 2.0)],
+    )
+    report = compact_plan_report(
+        plan, applied={"ok": True, "queue": {"ok": True}, "sync_problems": []},
+        reconcile={"ok": True, "matched": 1, "items": 1}, kind="price",
+        extra={"missing": [], "unmatched_targets": 0},
+    )
+    assert "missing" not in report
+    assert "unmatched_targets" not in report

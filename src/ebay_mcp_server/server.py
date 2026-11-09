@@ -1092,7 +1092,7 @@ async def soldeazy_change_price(
     try:
         from ebay_mcp_server.providers.soldeazy_change import run_change
         from ebay_mcp_server.providers.soldeazy_apply import apply_plan, build_items, make_plan, reconcile
-        from ebay_mcp_server.providers.soldeazy_plan import freeze, write_draft
+        from ebay_mcp_server.providers.soldeazy_plan import freeze, load_verified, write_draft
 
         if not targets:
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
@@ -1114,6 +1114,7 @@ async def soldeazy_change_price(
                 "make_plan": make_plan,
                 "write_draft": write_draft,
                 "freeze": freeze,
+                "load_verified": load_verified,
                 "apply_plan": apply_plan,
                 "reconcile": reconcile,
                 "plan_dir": _plan_dir(),
@@ -1149,7 +1150,7 @@ async def soldeazy_change_stock(
     try:
         from ebay_mcp_server.providers.soldeazy_change import run_change
         from ebay_mcp_server.providers.soldeazy_apply import apply_plan, build_items, make_plan, reconcile
-        from ebay_mcp_server.providers.soldeazy_plan import freeze, write_draft
+        from ebay_mcp_server.providers.soldeazy_plan import freeze, load_verified, write_draft
 
         if not targets:
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
@@ -1171,6 +1172,7 @@ async def soldeazy_change_stock(
                 "make_plan": make_plan,
                 "write_draft": write_draft,
                 "freeze": freeze,
+                "load_verified": load_verified,
                 "apply_plan": apply_plan,
                 "reconcile": reconcile,
                 "plan_dir": _plan_dir(),
