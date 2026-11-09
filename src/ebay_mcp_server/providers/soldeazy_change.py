@@ -143,13 +143,33 @@ async def run_change(
                 "SKU 前缀命中多个子体，无法判断改哪个",
                 details={"conflicts": conflicts, "missing": missing[:MAX_PROBLEMS]},
             )
+
+        # 一个都没匹配上，不能报"已经是目标值"——那是把"没找到"说成"不用改"。
+        if missing:
+            return {
+                "ok": False,
+                "kind": kind,
+                "plan_id": "",
+                "items": 0,
+                "missing": missing[:MAX_PROBLEMS],
+                "missing_total": len(missing),
+                "problems": [
+                    f"{len(missing)} 个目标在线上找不到对应行",
+                ],
+                "problems_total": 1,
+                "hint": (
+                    "检查 SKU 写法；如果生产账号里这些是未刊登，"
+                    "需要 include_unlisted=true 才会被查到。"
+                ),
+            }
+
         return {
             "ok": True,
             "kind": kind,
             "plan_id": "",
             "items": 0,
             "note": "所有行已经是目标值，未生成计划",
-            "missing": missing[:MAX_PROBLEMS],
+            "missing": [],
             "problems": [],
         }
 

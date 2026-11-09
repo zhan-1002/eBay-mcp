@@ -153,3 +153,39 @@ def test_change_tools_expose_include_unlisted():
     for tool in (server.soldeazy_change_price, server.soldeazy_change_stock):
         sig = inspect.signature(tool)
         assert sig.parameters["include_unlisted"].default is False
+
+
+def test_legacy_plan_without_only_listed_loads_as_false(tmp_path):
+    """旧计划字段缺失时按「包含全部」处理，重放才不会定位不到行。"""
+
+    import hashlib
+    import json
+
+    from ebay_mcp_server.providers.soldeazy_plan import load_verified
+
+    plan_id = "legacy-plan"
+    body = {
+        "plan_id": plan_id,
+        "kind": "price",
+        "site": "US",
+        "shop": {"id": "159", "name": "FUN"},
+        "created_at": "2026-11-01T00:00:00+00:00",
+        "status": "confirmed",
+        "supersedes": "",
+        "note": "",
+        "items": [
+            {"rowid": "4512957", "sku": "JJPC0029", "field": "price", "old": 21.9, "new": 23.0}
+        ],
+    }
+    # 存储用缩进格式，哈希用紧凑 canonical（与 load_verified 一致）
+    (tmp_path / f"{plan_id}.json").write_text(
+        json.dumps(body, ensure_ascii=False, indent=2) + chr(10), encoding="utf-8"
+    )
+    canonical = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    (tmp_path / f"{plan_id}.json.sha256").write_text(
+        hashlib.sha256(canonical.encode("utf-8")).hexdigest(), encoding="utf-8"
+    )
+
+    plan, digest = load_verified(tmp_path, plan_id)
+    assert plan.only_listed is False
+    assert digest

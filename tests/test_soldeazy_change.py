@@ -100,3 +100,86 @@ def test_compact_report_omits_empty_extras():
     )
     assert "missing" not in report
     assert "unmatched_targets" not in report
+
+
+async def _async_shop(shop):
+    return {"id": "159", "name": "FUN"}
+
+
+def test_change_reports_missing_instead_of_noop(tmp_path):
+    """线上一条都没匹配上时，必须报"找不到"，不能报"已经是目标值"。"""
+
+    import asyncio
+
+    from ebay_mcp_server.providers import soldeazy_change as mod
+
+    class FakeBrowser:
+        async def read_datasheet_values(self, site, query="", **kwargs):
+            return {}          # 线上什么都没有
+
+    async def run():
+        return await mod.run_change(
+            kind="price", site="US", targets={"JJPC0029": 23.0}, shop="",
+            dry_run=True, sync=True, sync_price=True, sync_quantity=False,
+            verbose=False, only_listed=True,
+            deps={
+                "build_items": __import__(
+                    "ebay_mcp_server.providers.soldeazy_apply", fromlist=["build_items"]
+                ).build_items,
+                "make_plan": lambda *a, **k: None,
+                "write_draft": lambda *a, **k: None,
+                "freeze": lambda *a, **k: None,
+                "load_verified": lambda *a, **k: (None, ""),
+                "apply_plan": None,
+                "reconcile": None,
+                "plan_dir": tmp_path,
+                "browser": FakeBrowser(),
+                "resolve_shop": _async_shop,
+            },
+        )
+
+    result = asyncio.run(run())
+    assert result["ok"] is False
+    assert result["missing"] == ["JJPC0029"]
+    assert "找不到" in result["problems"][0]
+
+
+def test_change_reports_noop_when_already_at_target(tmp_path):
+    import asyncio
+
+    from ebay_mcp_server.providers import soldeazy_change as mod
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    class FakeBrowser:
+        async def read_datasheet_values(self, site, query="", **kwargs):
+            return {
+                ("4512957", "JJPC0029"): {
+                    "rowid": "4512957", "parent": "JJPC0029",
+                    "sku": "JJPC0029", "qty": 100, "price": 23.0,
+                }
+            }
+
+    async def run():
+        return await mod.run_change(
+            kind="price", site="US", targets={"JJPC0029": 23.0}, shop="",
+            dry_run=True, sync=True, sync_price=True, sync_quantity=False,
+            verbose=False, only_listed=True,
+            deps={
+                "build_items": build_items,
+                "make_plan": lambda *a, **k: None,
+                "write_draft": lambda *a, **k: None,
+                "freeze": lambda *a, **k: None,
+                "load_verified": lambda *a, **k: (None, ""),
+                "apply_plan": None,
+                "reconcile": None,
+                "plan_dir": tmp_path,
+                "browser": FakeBrowser(),
+                "resolve_shop": _async_shop,
+            },
+        )
+
+    result = asyncio.run(run())
+    assert result["ok"] is True
+    assert result["items"] == 0
+    assert "已经是目标值" in result["note"]
+    assert result["missing"] == []

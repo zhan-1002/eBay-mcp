@@ -163,9 +163,21 @@ def load_verified(directory: Path, plan_id: str) -> tuple[ChangePlan, str]:
         status=raw.get("status", DRAFT),
         supersedes=raw.get("supersedes", ""),
         note=raw.get("note", ""),
-        only_listed=bool(raw.get("only_listed", True)),
+        # 旧计划是在「没有状态过滤」时生成的，字段缺失说明它当时包含全部。
+        # 这里必须沿用 False，否则重放旧计划会定位不到行。
+        only_listed=bool(raw.get("only_listed", False)),
     )
-    actual = plan.digest()
+    # 校验「文件自冻结后没被改过」。
+    # 当前版本用重建后的 canonical 形式；旧文件没有 only_listed 字段，
+    # 重建时补上会让哈希必然不符，所以对它们直接对原始 JSON 取 canonical。
+    if "only_listed" in raw:
+        actual = plan.digest()
+    else:
+        actual = hashlib.sha256(
+            json.dumps(
+                raw, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
     if actual != expected:
         raise PlanError(
             f"{plan_id} 的内容与确认时不一致（文件被改过），拒绝执行"

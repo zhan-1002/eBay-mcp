@@ -609,6 +609,7 @@ async def soldeazy_search_datasheet(
     limit: int = 50,
     offset: int = 0,
     with_title: bool = False,
+    include_unlisted: bool = False,
     allow_large_output: bool = False,
 ) -> dict[str, Any]:
     """Read datasheet rows (Row ID, SKU, price, postage, qty) for one site.
@@ -630,7 +631,7 @@ async def soldeazy_search_datasheet(
             EbayMcpError("SOLDEAZY_SITE_REQUIRED", "必须给出 site（US/UK/DE…）。"),
         )
     try:
-        data = await soldeazy.search(query, site)
+        data = await soldeazy.search(query, site, only_listed=not include_unlisted)
         rows = data.get("rows") or []
         payload = {
             **{k: v for k, v in data.items() if k != "rows"},
@@ -1531,7 +1532,8 @@ async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
             items=[PlanItem(**item) for item in raw.get("items", [])],
             supersedes=raw.get("supersedes", ""),
             note=raw.get("note", ""),
-            only_listed=bool(raw.get("only_listed", True)),
+            # 旧计划没有这个字段时按「包含全部」处理（见 soldeazy_plan.load_verified）
+            only_listed=bool(raw.get("only_listed", False)),
         )
         if not plan.items:
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "计划里没有任何改动，不冻结。")

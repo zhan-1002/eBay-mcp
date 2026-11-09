@@ -582,7 +582,26 @@ class SoldeazyBrowser:
             await page.wait_for_load_state("domcontentloaded")
             await asyncio.sleep(self.settings.soldeazy_min_delay)
 
-            table = await self._locate("result_table")
+            try:
+                table = await self._locate("result_table")
+            except EbayMcpError:
+                # 没有结果表 = 这次搜索 0 条，不是错误。
+                # 典型场景：只查「已刊登」但该账号全是未刊登。
+                return {
+                    "site": site,
+                    "shop": shop,
+                    "search": sku_terms,
+                    "status_filter": self._last_status
+                    or ("已刊登" if only_listed else "不限"),
+                    "columns": [],
+                    "row_count": 0,
+                    "rows": [],
+                    "empty_reason": (
+                        "没有匹配的数据表"
+                        + ("（当前只查已刊登，可能被状态过滤掉了）" if only_listed else "")
+                    ),
+                }
+
             trs = table.locator("tr")
             total = await trs.count()
             cell_rows: list[list[str]] = []
