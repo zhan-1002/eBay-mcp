@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import tempfile
@@ -566,6 +567,40 @@ def _cap_rows(
     }
 
 
+# 单次返回的字符上限。超过就拒绝，要求调用方显式确认——
+# 这是"大幅消耗 token 前必须先征得同意"的落地点。
+MAX_OUTPUT_CHARS = 4000
+
+
+def _estimate_tokens(text: str) -> int:
+    ascii_chars = sum(1 for ch in text if ord(ch) < 128)
+    return round(ascii_chars / 4 + (len(text) - ascii_chars) * 1.5)
+
+
+def _output_too_large(payload: dict[str, Any], *, allow: bool = False) -> dict[str, Any] | None:
+    """返回过大时给出"先征得同意"的错误；允许或未超限则返回 None。"""
+
+    text = json.dumps(payload, ensure_ascii=False)
+    if allow or len(text) <= MAX_OUTPUT_CHARS:
+        return None
+    return tool_error(
+        "soldeazy_output_guard",
+        EbayMcpError(
+            "SOLDEAZY_OUTPUT_TOO_LARGE",
+            "这次返回约 {tokens} token，超过单次上限（≈{cap} token）。"
+            "需要继续的话，请先和用户确认，再带 allow_large_output=true 重调；"
+            "或者缩小范围：limit/offset 翻页、关掉 verbose、缩小 targets。".format(
+                tokens=_estimate_tokens(text), cap=_estimate_tokens("x" * MAX_OUTPUT_CHARS)
+            ),
+            details={
+                "chars": len(text),
+                "estimated_tokens": _estimate_tokens(text),
+                "threshold_tokens": _estimate_tokens("x" * MAX_OUTPUT_CHARS),
+            },
+        ),
+    )
+
+
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def soldeazy_search_datasheet(
     site: str,
@@ -574,6 +609,7 @@ async def soldeazy_search_datasheet(
     limit: int = 50,
     offset: int = 0,
     with_title: bool = False,
+    allow_large_output: bool = False,
 ) -> dict[str, Any]:
     """Read datasheet rows (Row ID, SKU, price, postage, qty) for one site.
 
@@ -596,14 +632,14 @@ async def soldeazy_search_datasheet(
     try:
         data = await soldeazy.search(query, site)
         rows = data.get("rows") or []
-        return success(
-            "soldeazy_search_datasheet",
-            "soldeazy",
-            {
-                **{k: v for k, v in data.items() if k != "rows"},
-                **_cap_rows(rows, limit=limit, offset=offset, with_title=with_title),
-            },
-        )
+        payload = {
+            **{k: v for k, v in data.items() if k != "rows"},
+            **_cap_rows(rows, limit=limit, offset=offset, with_title=with_title),
+        }
+        blocked = _output_too_large(payload, allow=allow_large_output)
+        if blocked is not None:
+            return blocked
+        return success("soldeazy_search_datasheet", "soldeazy", payload)
     except EbayMcpError as exc:
         return tool_error("soldeazy_search_datasheet", exc)
     except Exception as exc:  # pragma: no cover - browser safety boundary
@@ -1079,6 +1115,7 @@ async def soldeazy_change_price(
     sync_price: bool = True,
     verbose: bool = False,
     include_unlisted: bool = False,
+    allow_large_output: bool = False,
 ) -> dict[str, Any]:
     """**一步改价**：起草 → 冻结 → 执行 → 对账，只返回判决。
 
@@ -1124,6 +1161,9 @@ async def soldeazy_change_price(
                 "resolve_shop": _resolve_shop_id,
             },
         )
+        blocked = _output_too_large(data, allow=allow_large_output)
+        if blocked is not None:
+            return blocked
         return success("soldeazy_change_price", "soldeazy", data)
     except EbayMcpError as exc:
         return tool_error("soldeazy_change_price", exc)
@@ -1143,6 +1183,7 @@ async def soldeazy_change_stock(
     dry_run: bool = False,
     verbose: bool = False,
     include_unlisted: bool = False,
+    allow_large_output: bool = False,
 ) -> dict[str, Any]:
     """**一步改库存**：起草 → 冻结 → 执行 → 对账，只返回判决。
 
@@ -1184,6 +1225,9 @@ async def soldeazy_change_stock(
                 "resolve_shop": _resolve_shop_id,
             },
         )
+        blocked = _output_too_large(data, allow=allow_large_output)
+        if blocked is not None:
+            return blocked
         return success("soldeazy_change_stock", "soldeazy", data)
     except EbayMcpError as exc:
         return tool_error("soldeazy_change_stock", exc)
@@ -1380,6 +1424,7 @@ async def soldeazy_plan_changes(
     targets: dict[str, float],
     shop: str = "",
     supersedes: str = "",
+    allow_large_output: bool = False,
 ) -> dict[str, Any]:
     """Draft a change plan (read-only): what would change, row by row.
 
@@ -1410,30 +1455,30 @@ async def soldeazy_plan_changes(
         # 后面 confirm/reconcile 撞上去只会报一句看不懂的"找不到计划"。
         path = str(write_draft(_plan_dir(), plan)) if items else ""
 
-        return success(
-            "soldeazy_plan_changes",
-            "soldeazy",
-            {
-                "plan_id": plan.plan_id if items else "",
-                "path": path,
-                "kind": kind,
-                "site": site,
-                "shop": picked,
-                "rows_in_scope": len(live),
-                "planned_items": len(items),
-                "items": [item.as_dict() for item in items[:50]],
-                "items_truncated": len(items) > 50,
-                "items_total": len(items),
-                "missing": report["missing"][:20],
-                "missing_total": len(report["missing"]),
-                "conflicts": report["conflicts"],
-                "next": (
-                    "确认无误后调用 soldeazy_confirm_plan 冻结"
-                    if items
-                    else "没有需要改的行，未生成计划文件"
-                ),
-            },
-        )
+        payload = {
+            "plan_id": plan.plan_id if items else "",
+            "path": path,
+            "kind": kind,
+            "site": site,
+            "shop": picked,
+            "rows_in_scope": len(live),
+            "planned_items": len(items),
+            "items": [item.as_dict() for item in items[:50]],
+            "items_truncated": len(items) > 50,
+            "items_total": len(items),
+            "missing": report["missing"][:20],
+            "missing_total": len(report["missing"]),
+            "conflicts": report["conflicts"],
+            "next": (
+                "确认无误后调用 soldeazy_confirm_plan 冻结"
+                if items
+                else "没有需要改的行，未生成计划文件"
+            ),
+        }
+        blocked = _output_too_large(payload, allow=allow_large_output)
+        if blocked is not None:
+            return blocked
+        return success("soldeazy_plan_changes", "soldeazy", payload)
     except EbayMcpError as exc:
         return tool_error("soldeazy_plan_changes", exc)
     except Exception as exc:  # pragma: no cover - browser safety boundary
@@ -1514,6 +1559,7 @@ async def soldeazy_apply_plan(
     sync: bool = True,
     sync_price: bool = True,
     sync_quantity: bool = False,
+    allow_large_output: bool = False,
 ) -> dict[str, Any]:
     """Execute a frozen plan: export → batch edit → one upload → queue check.
 
@@ -1546,11 +1592,11 @@ async def soldeazy_apply_plan(
             soldeazy, plan, directory,
             sync=bool(sync), sync_price=bool(sync_price), sync_quantity=bool(sync_quantity),
         )
-        return success(
-            "soldeazy_apply_plan",
-            "soldeazy",
-            {**scope, **result, "dry_run": False, "next": "调用 soldeazy_reconcile_plan 对账"},
-        )
+        payload = {**scope, **result, "dry_run": False, "next": "调用 soldeazy_reconcile_plan 对账"}
+        blocked = _output_too_large(payload, allow=allow_large_output)
+        if blocked is not None:
+            return blocked
+        return success("soldeazy_apply_plan", "soldeazy", payload)
     except PlanError as exc:
         return tool_error(
             "soldeazy_apply_plan",
@@ -1567,7 +1613,9 @@ async def soldeazy_apply_plan(
 
 
 @mcp.tool(annotations=READ_ONLY_NETWORK)
-async def soldeazy_reconcile_plan(plan_id: str) -> dict[str, Any]:
+async def soldeazy_reconcile_plan(
+    plan_id: str, allow_large_output: bool = False
+) -> dict[str, Any]:
     """Compare the live values against a frozen plan and write a report file.
 
     The report is a new file (``<plan_id>.reconcile.json``); the plan itself is
@@ -1582,11 +1630,11 @@ async def soldeazy_reconcile_plan(plan_id: str) -> dict[str, Any]:
         directory = _plan_dir()
         plan, digest = load_verified(directory, plan_id)
         report = await reconcile(soldeazy, plan, directory)
-        return success(
-            "soldeazy_reconcile_plan",
-            "soldeazy",
-            {**report, "sha256": digest},
-        )
+        payload = {**report, "sha256": digest}
+        blocked = _output_too_large(payload, allow=allow_large_output)
+        if blocked is not None:
+            return blocked
+        return success("soldeazy_reconcile_plan", "soldeazy", payload)
     except PlanError as exc:
         return tool_error(
             "soldeazy_reconcile_plan",

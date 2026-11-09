@@ -211,3 +211,46 @@ def test_cap_rows_response_is_bounded_in_size():
     full = len(json.dumps(rows, ensure_ascii=False))
     capped = len(json.dumps(_cap_rows(rows), ensure_ascii=False))
     assert capped < full / 8
+
+
+def test_output_guard_blocks_large_payload():
+    from ebay_mcp_server.server import _output_too_large
+
+    big = {"rows": [{"x": "y" * 200} for _ in range(100)]}
+    blocked = _output_too_large(big)
+    assert blocked is not None
+    assert blocked["success"] is False
+    assert blocked["error"]["code"] == "SOLDEAZY_OUTPUT_TOO_LARGE"
+    assert "确认" in blocked["error"]["message"]
+    assert blocked["error"]["details"]["estimated_tokens"] > 0
+
+
+def test_output_guard_allows_when_confirmed():
+    from ebay_mcp_server.server import _output_too_large
+
+    big = {"rows": [{"x": "y" * 200} for _ in range(100)]}
+    assert _output_too_large(big, allow=True) is None
+
+
+def test_output_guard_passes_small_payload():
+    from ebay_mcp_server.server import _output_too_large
+
+    assert _output_too_large({"ok": True, "items": 8}) is None
+
+
+def test_expensive_tools_require_confirmation_flag():
+    import inspect
+
+    from ebay_mcp_server import server
+
+    for tool in (
+        server.soldeazy_search_datasheet,
+        server.soldeazy_plan_changes,
+        server.soldeazy_apply_plan,
+        server.soldeazy_reconcile_plan,
+        server.soldeazy_change_price,
+        server.soldeazy_change_stock,
+    ):
+        sig = inspect.signature(tool)
+        assert "allow_large_output" in sig.parameters
+        assert sig.parameters["allow_large_output"].default is False
