@@ -170,6 +170,36 @@ def plan_to_cell_changes(
     return changes, missing
 
 
+def shop_problems(plan: ChangePlan, matrix: list[list[Any]], current_shop: dict | None) -> list[str]:
+    """确认导出的数据和计划属于同一个渠道账号。
+
+    两个来源都要对：a) 当前活动账号；b) 导出文件里实际出现的店铺名。
+    少任何一条，切号后执行都会悄悄写进别的店铺。
+    """
+
+    problems: list[str] = []
+    expected_id = str((plan.shop or {}).get("id") or "").strip()
+    expected_name = str((plan.shop or {}).get("name") or "").strip()
+    current_id = str((current_shop or {}).get("id") or "").strip()
+
+    if expected_id and current_id and expected_id != current_id:
+        problems.append(
+            f"活动渠道账号已从 {expected_name or expected_id} 切到 {current_id}，请重新预览"
+        )
+
+    from ebay_mcp_server.providers.soldeazy_workbook import header_row_count
+
+    header = header_row_count(matrix)
+    shops = {
+        str(row[1] or "").strip()
+        for row in matrix[header:]
+        if len(row) > 1 and str(row[1] or "").strip()
+    }
+    if expected_name and shops and expected_name not in shops:
+        problems.append(f"导出结果里没有计划所属的渠道账号 {expected_name}，实际为 {sorted(shops)}")
+    return problems
+
+
 def append_audit(audit_path: Path, plan_id: str, rowid: str, result: dict[str, Any]) -> None:
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     line = {
@@ -245,6 +275,18 @@ async def apply_plan(browser: Any, plan: ChangePlan, workdir: Path) -> dict[str,
     await browser.export(exported)
     _sheet, matrix = read_matrix(exported)
 
+    # 切了渠道账号还拿旧计划执行，会写进别的店铺——这里直接拦住
+    guard = shop_problems(plan, matrix, getattr(browser, "active_shop", None))
+    if guard:
+        return {
+            "plan_id": plan.plan_id,
+            "ok": False,
+            "channel": "upload",
+            "error": "渠道账号与计划不一致，已中止（未上传）",
+            "problems": guard,
+            "audit": str(audit),
+        }
+
     changes, missing = plan_to_cell_changes(plan, matrix)
     if missing:
         return {
@@ -316,24 +358,35 @@ async def _await_queue(
 
     job_id = str(handle)
     job: dict[str, Any] = {}
-    for _ in range(attempts):
-        jobs = await browser.queue_jobs(limit=30)
+    for attempt in range(attempts):
+        jobs = await browser.queue_jobs(limit=50)
         job = next((j for j in jobs if str(j.get("queue_job_idx")) == job_id), {})
         if job:
             res = job.get("queue_job_res") or {}
             processing = str(res.get("processing_msgs_count", "0"))
             if processing in {"0", ""} and str(job.get("queue_job_enddate") or "").strip():
                 break
+        elif attempt >= 2:
+            # 列表里翻不到（任务太多或被清理）就别再空等，详情接口按 id 一定能查
+            break
         await asyncio.sleep(wait_seconds)
 
-    if not job:
-        return {"ok": False, "job_id": job_id, "problems": ["工序列表里找不到这个任务"]}
-
     detail = await browser.queue_result(job_id)
+    rows = detail.get("rows") or []
+
+    if not job and not rows:
+        return {
+            "ok": False,
+            "job_id": job_id,
+            "problems": ["工序列表里找不到这个任务，按 id 也查不到明细"],
+        }
+
     res = job.get("queue_job_res") or {}
-    total = str(res.get("total_items", ""))
-    success = str(res.get("success_msgs_count", ""))
-    failed = str(res.get("failure_msgs_count", ""))
+    total = str(res.get("total_items", "")) or str(len(rows))
+    success = str(res.get("success_msgs_count", "")) or str(
+        sum(1 for row in rows if "successful" in row["result"].lower())
+    )
+    failed = str(res.get("failure_msgs_count", "0"))
 
     problems: list[str] = []
     if failed not in {"0", ""}:
@@ -357,7 +410,7 @@ async def _await_queue(
         "success": success,
         "failed": failed,
         "expected_datasheets": expected_datasheets,
-        "rowids": [row["rowid"] for row in detail.get("rows") or []],
+        "rowids": [row["rowid"] for row in rows],
         "problems": problems,
     }
 

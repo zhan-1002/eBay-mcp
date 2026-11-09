@@ -781,7 +781,7 @@ class SoldeazyBrowser:
         """
 
         page = await self._ensure_page()
-        await page.goto(f"{self.base_url}{UPLOAD_PATH}", wait_until="domcontentloaded")
+        await self._goto(f"{self.base_url}{UPLOAD_PATH}")
         await asyncio.sleep(2)
 
         await (await self._locate("upload_file")).set_input_files(str(path))

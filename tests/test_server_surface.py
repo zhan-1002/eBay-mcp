@@ -138,3 +138,31 @@ def test_new_write_tools_default_to_dry_run():
         server.soldeazy_upload_photo,
     ):
         assert inspect.signature(tool).parameters["dry_run"].default is True
+
+
+def test_search_datasheet_requires_site_but_allows_empty_query():
+    import asyncio
+
+    result = asyncio.run(server.soldeazy_search_datasheet(""))
+    assert result["success"] is False
+    assert result["error"]["code"] == "SOLDEAZY_SITE_REQUIRED"
+
+
+def test_plan_tools_reject_empty_plan_id():
+    import asyncio
+
+    for tool in (
+        server.soldeazy_confirm_plan,
+        server.soldeazy_apply_plan,
+        server.soldeazy_reconcile_plan,
+    ):
+        result = asyncio.run(tool(""))
+        assert result["success"] is False
+        assert result["error"]["code"] == "SOLDEAZY_PLAN_MISSING"
+
+
+def test_apply_plan_has_shop_guard():
+    from ebay_mcp_server.providers.soldeazy_apply import shop_problems
+
+    assert callable(shop_problems)
+

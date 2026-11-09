@@ -32,6 +32,7 @@ from ebay_mcp_server.providers.soldeazy_pricing import (
     plan_stock_changes,
     rows_from_matrix,
 )
+from ebay_mcp_server.providers.soldeazy_plan import PlanError
 from ebay_mcp_server.providers.soldeazy_write import WriteRegistry, check_drift, rows_to_state
 from ebay_mcp_server.skill_registry import SkillRegistry
 from ebay_mcp_server.title_validation import validate_titles
@@ -553,11 +554,13 @@ async def soldeazy_search_datasheet(
     SKU and its ``US``/``x2``/``x4`` variants come back in one query. Pass
     ``search_text`` to use the box verbatim instead.
     """
+    # 空查询是合法的：等于「这个渠道账号 + 站点下的全部数据表」，
+    # 计划预览内部就是这么读的，工具层不该比它还严。
     query = _search_text(skus, search_text)
-    if not query:
+    if not site:
         return tool_error(
             "soldeazy_search_datasheet",
-            EbayMcpError("SOLDEAZY_QUERY_EMPTY", "至少给一个 SKU 或 search_text。"),
+            EbayMcpError("SOLDEAZY_SITE_REQUIRED", "必须给出 site（US/UK/DE…）。"),
         )
     try:
         data = await soldeazy.search(query, site)
@@ -1238,14 +1241,17 @@ async def soldeazy_plan_changes(
         live = await soldeazy.read_datasheet_values(site)
         items, report = build_items(live, kind, targets)
         plan = make_plan(kind, site, picked, items, supersedes=supersedes)
-        path = write_draft(_plan_dir(), plan)
+
+        # 没有任何改动就不落计划文件：否则会留下一份 items=0 的草稿，
+        # 后面 confirm/reconcile 撞上去只会报一句看不懂的"找不到计划"。
+        path = str(write_draft(_plan_dir(), plan)) if items else ""
 
         return success(
             "soldeazy_plan_changes",
             "soldeazy",
             {
-                "plan_id": plan.plan_id,
-                "path": str(path),
+                "plan_id": plan.plan_id if items else "",
+                "path": path,
                 "kind": kind,
                 "site": site,
                 "shop": picked,
@@ -1254,7 +1260,11 @@ async def soldeazy_plan_changes(
                 "items": [item.as_dict() for item in items],
                 "missing": report["missing"],
                 "conflicts": report["conflicts"],
-                "next": "确认无误后调用 soldeazy_confirm_plan 冻结",
+                "next": (
+                    "确认无误后调用 soldeazy_confirm_plan 冻结"
+                    if items
+                    else "没有需要改的行，未生成计划文件"
+                ),
             },
         )
     except EbayMcpError as exc:
@@ -1265,6 +1275,19 @@ async def soldeazy_plan_changes(
             "soldeazy_plan_changes",
             EbayMcpError("SOLDEAZY_PLAN_ERROR", f"生成计划失败: {type(exc).__name__}"),
         )
+
+
+def _require_plan_id(plan_id: str) -> str:
+    """计划 id 必须非空——空 id 会让后续查找报出看不懂的错误。"""
+
+    value = (plan_id or "").strip()
+    if not value:
+        raise EbayMcpError(
+            "SOLDEAZY_PLAN_MISSING",
+            "没有可用的计划 id：先调用 soldeazy_plan_changes 生成计划。"
+            "（如果它返回 planned_items=0，说明本来就没有需要改的行。）",
+        )
+    return value
 
 
 @mcp.tool(annotations=LOCAL_SESSION_ACTION)
@@ -1279,6 +1302,7 @@ async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
     try:
         from ebay_mcp_server.providers.soldeazy_plan import freeze, load_raw
 
+        plan_id = _require_plan_id(plan_id)
         directory = _plan_dir()
         path = directory / f"{plan_id}.json"
         if not path.exists():
@@ -1300,6 +1324,11 @@ async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "计划里没有任何改动，不冻结。")
         info = freeze(directory, plan)
         return success("soldeazy_confirm_plan", "soldeazy", {**info, "plan_id": plan_id})
+    except PlanError as exc:
+        return tool_error(
+            "soldeazy_confirm_plan",
+            EbayMcpError("SOLDEAZY_PLAN_INVALID", str(exc)[:200]),
+        )
     except EbayMcpError as exc:
         return tool_error("soldeazy_confirm_plan", exc)
     except Exception as exc:
@@ -1312,7 +1341,7 @@ async def soldeazy_confirm_plan(plan_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=REMOTE_WRITE)
 async def soldeazy_apply_plan(plan_id: str, dry_run: bool = True) -> dict[str, Any]:
-    """Execute a frozen plan through the save API, one datasheet per submit.
+    """Execute a frozen plan: export → batch edit → one upload → queue check.
 
     The plan file is never modified; every attempt is appended to an audit log.
     ``dry_run`` defaults to true: it verifies the hash and reports scope only.
@@ -1322,6 +1351,7 @@ async def soldeazy_apply_plan(plan_id: str, dry_run: bool = True) -> dict[str, A
         from ebay_mcp_server.providers.soldeazy_apply import apply_plan
         from ebay_mcp_server.providers.soldeazy_plan import load_verified
 
+        plan_id = _require_plan_id(plan_id)
         directory = _plan_dir()
         plan, digest = load_verified(directory, plan_id)
 
@@ -1343,6 +1373,11 @@ async def soldeazy_apply_plan(plan_id: str, dry_run: bool = True) -> dict[str, A
             "soldeazy_apply_plan",
             "soldeazy",
             {**scope, **result, "dry_run": False, "next": "调用 soldeazy_reconcile_plan 对账"},
+        )
+    except PlanError as exc:
+        return tool_error(
+            "soldeazy_apply_plan",
+            EbayMcpError("SOLDEAZY_PLAN_INVALID", str(exc)[:200]),
         )
     except EbayMcpError as exc:
         return tool_error("soldeazy_apply_plan", exc)
@@ -1366,6 +1401,7 @@ async def soldeazy_reconcile_plan(plan_id: str) -> dict[str, Any]:
         from ebay_mcp_server.providers.soldeazy_apply import reconcile
         from ebay_mcp_server.providers.soldeazy_plan import load_verified
 
+        plan_id = _require_plan_id(plan_id)
         directory = _plan_dir()
         plan, digest = load_verified(directory, plan_id)
         report = await reconcile(soldeazy, plan, directory)
@@ -1373,6 +1409,11 @@ async def soldeazy_reconcile_plan(plan_id: str) -> dict[str, Any]:
             "soldeazy_reconcile_plan",
             "soldeazy",
             {**report, "sha256": digest},
+        )
+    except PlanError as exc:
+        return tool_error(
+            "soldeazy_reconcile_plan",
+            EbayMcpError("SOLDEAZY_PLAN_INVALID", str(exc)[:200]),
         )
     except EbayMcpError as exc:
         return tool_error("soldeazy_reconcile_plan", exc)

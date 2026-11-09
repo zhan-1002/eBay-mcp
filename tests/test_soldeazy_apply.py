@@ -94,3 +94,41 @@ def test_plan_rows_single_variant_only_that_row() -> None:
         ],
     )
     assert plan_rows(plan, matrix) == [2]
+
+
+def test_shop_guard_flags_switched_account() -> None:
+    from ebay_mcp_server.providers.soldeazy_apply import shop_problems
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
+
+    matrix = [
+        ["dsheet_row_id", "dsheet_shop_initial", "dsheet_var_parent_sku"],
+        ["Row ID", "Sales channel", "P.SKU"],
+        ["4512957", "FUN", "JJPC0029"],
+    ]
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+    )
+    # 活动账号还是 FUN -> 不报问题
+    assert shop_problems(plan, matrix, {"id": "159", "name": "FUN"}) == []
+
+    # 切到 LT -> 必须报
+    problems = shop_problems(plan, matrix, {"id": "4432", "name": "LT"})
+    assert problems and "切到" in problems[0]
+
+
+def test_shop_guard_flags_export_from_other_shop() -> None:
+    from ebay_mcp_server.providers.soldeazy_apply import shop_problems
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
+
+    matrix = [
+        ["dsheet_row_id", "dsheet_shop_initial", "dsheet_var_parent_sku"],
+        ["Row ID", "Sales channel", "P.SKU"],
+        ["4568704", "LT", "2401"],
+    ]
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+    )
+    problems = shop_problems(plan, matrix, {"id": "159", "name": "FUN"})
+    assert any("没有计划所属" in item for item in problems)
