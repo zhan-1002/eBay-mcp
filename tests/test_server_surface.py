@@ -166,3 +166,46 @@ def test_apply_plan_has_shop_guard():
 
     assert callable(shop_problems)
 
+
+
+def test_cap_rows_defaults_and_caps():
+    from ebay_mcp_server.server import _cap_rows
+
+    rows = [{"rowid": str(i), "sku": "X", "title": "很长的标题" * 10} for i in range(500)]
+
+    page = _cap_rows(rows)
+    assert len(page["rows"]) == 50
+    assert page["total"] == 500
+    assert page["has_more"] is True
+    assert "title" not in page["rows"][0]          # 默认不带标题
+
+    huge = _cap_rows(rows, limit=99999)
+    assert len(huge["rows"]) == 200                 # 硬上限 200
+
+    last = _cap_rows(rows, limit=50, offset=480)
+    assert len(last["rows"]) == 20
+    assert last["has_more"] is False
+
+
+def test_cap_rows_keeps_title_when_asked():
+    from ebay_mcp_server.server import _cap_rows
+
+    rows = [{"rowid": "1", "title": "abc"}]
+    assert _cap_rows(rows, with_title=True)["rows"][0]["title"] == "abc"
+
+
+def test_cap_rows_response_is_bounded_in_size():
+    """500 条带长标题的数据，裁完后的 JSON 必须远小于全量。"""
+
+    import json
+
+    from ebay_mcp_server.server import _cap_rows
+
+    rows = [
+        {"rowid": str(i), "sku": "JJPC0029", "title": "3/8/16 Outlet Surge Protector " * 3,
+         "price": 21.9, "qty": 100}
+        for i in range(500)
+    ]
+    full = len(json.dumps(rows, ensure_ascii=False))
+    capped = len(json.dumps(_cap_rows(rows), ensure_ascii=False))
+    assert capped < full / 8

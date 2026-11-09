@@ -615,8 +615,10 @@ async def reconcile(
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "items": len(plan.items),
         "matched": matched,
-        "mismatched": mismatches,
-        "absent": absent,
+        "mismatched": mismatches[:50],
+        "mismatched_total": len(mismatches),
+        "absent": absent[:50],
+        "absent_total": len(absent),
         "rounds": rounds,
         "ok": not mismatches and not absent,
     }

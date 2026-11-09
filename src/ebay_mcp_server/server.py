@@ -542,17 +542,48 @@ async def soldeazy_open_login() -> dict[str, Any]:
         return tool_error("soldeazy_open_login", exc)
 
 
+def _cap_rows(
+    rows: list[dict[str, Any]], *, limit: int = 50, offset: int = 0, with_title: bool = False
+) -> dict[str, Any]:
+    """把行列表裁成安全的一页。
+
+    生产账号一次搜索可能几千行，全量回传会在对话里吃掉几十万 token。
+    这里统一限流：默认 50 条、最多 200 条，标题默认不带。
+    """
+
+    page_size = max(1, min(int(limit or 50), 200))
+    start = max(0, int(offset or 0))
+    window = rows[start : start + page_size]
+    if not with_title:
+        window = [{k: v for k, v in row.items() if k != "title"} for row in window]
+    return {
+        "rows": window,
+        "total": len(rows),
+        "offset": start,
+        "limit": page_size,
+        "truncated": start + page_size < len(rows),
+        "has_more": start + page_size < len(rows),
+    }
+
+
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def soldeazy_search_datasheet(
     site: str,
     skus: list[str] | None = None,
     search_text: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    with_title: bool = False,
 ) -> dict[str, Any]:
     """Read datasheet rows (Row ID, SKU, price, postage, qty) for one site.
 
     ``skus`` are product codes; each becomes a ``*CODE`` wildcard so the bare
     SKU and its ``US``/``x2``/``x4`` variants come back in one query. Pass
     ``search_text`` to use the box verbatim instead.
+
+    **返回条数默认上限 50 条**（``limit``，最多 200）。生产账号一次可能几千条，
+    全量返回会在对话里吃掉几十万 token；确实需要全量时用 ``offset`` 翻页。
+    ``with_title`` 默认关闭——标题是单行最占字的部分。
     """
     # 空查询是合法的：等于「这个渠道账号 + 站点下的全部数据表」，
     # 计划预览内部就是这么读的，工具层不该比它还严。
@@ -564,7 +595,15 @@ async def soldeazy_search_datasheet(
         )
     try:
         data = await soldeazy.search(query, site)
-        return success("soldeazy_search_datasheet", "soldeazy", data)
+        rows = data.get("rows") or []
+        return success(
+            "soldeazy_search_datasheet",
+            "soldeazy",
+            {
+                **{k: v for k, v in data.items() if k != "rows"},
+                **_cap_rows(rows, limit=limit, offset=offset, with_title=with_title),
+            },
+        )
     except EbayMcpError as exc:
         return tool_error("soldeazy_search_datasheet", exc)
     except Exception as exc:  # pragma: no cover - browser safety boundary
@@ -1257,8 +1296,11 @@ async def soldeazy_plan_changes(
                 "shop": picked,
                 "rows_in_scope": len(live),
                 "planned_items": len(items),
-                "items": [item.as_dict() for item in items],
-                "missing": report["missing"],
+                "items": [item.as_dict() for item in items[:50]],
+                "items_truncated": len(items) > 50,
+                "items_total": len(items),
+                "missing": report["missing"][:20],
+                "missing_total": len(report["missing"]),
                 "conflicts": report["conflicts"],
                 "next": (
                     "确认无误后调用 soldeazy_confirm_plan 冻结"
