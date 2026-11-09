@@ -180,6 +180,8 @@ class SoldeazyBrowser:
         self._last_query: str = ""
         self._last_site: str = ""
         self.browser_channel_used: str = ""
+        self.session_save_error: str = ""
+        self.session_cookie_count: int = 0
 
     # ---------- 生命周期 ----------
     @property
@@ -192,12 +194,26 @@ class SoldeazyBrowser:
         return bool(directory and directory.is_dir() and any(directory.iterdir()))
 
     async def status(self) -> dict[str, Any]:
+        session_file = self._session_file() if self.profile_dir else None
+        session_cookies = 0
+        if session_file and session_file.is_file():
+            try:
+                session_cookies = len(json.loads(session_file.read_text(encoding="utf-8")))
+            except (ValueError, OSError):
+                session_cookies = -1  # 文件坏了
         return {
             "name": "soldeazy",
             "base_url": self.base_url,
             "playwright_installed": _selector_available(),
             "profile_dir": str(self.profile_dir) if self.profile_dir else "",
             "profile_ready": self.profile_ready(),
+            "credentials_configured": bool(
+                self.settings.soldeazy_username and self.settings.soldeazy_password
+            ),
+            "session_file": str(session_file) if session_file else "",
+            "session_file_exists": bool(session_file and session_file.is_file()),
+            "session_cookie_count": session_cookies,
+            "session_save_error": self.session_save_error,
             "write_enabled": self.settings.soldeazy_write_enabled,
             "browser_open": self._page is not None,
             "browser_channel_configured": self.settings.soldeazy_browser_channel or "(内置 Chromium)",
@@ -282,17 +298,24 @@ class SoldeazyBrowser:
         return self.profile_dir / "session_cookies.json"
 
     async def _save_session(self) -> None:
-        """把 cookie 落盘（含会话级 _ht_ses_），重启后仍能复用登录态。"""
+        """把 cookie 落盘（含会话级 _ht_ses_），重启后仍能复用登录态。
 
+        写盘失败不能静默——那正是"cookie 存不下来、每次都要重新登录"的根因，
+        失败原因记在 ``session_save_error`` 里，由 status 暴露出来。
+        """
+
+        self.session_save_error = ""
         if self._context is None:
+            self.session_save_error = "浏览器上下文未启动，跳过了 cookie 落盘"
             return
         try:
             cookies = await self._context.cookies()
+            self.session_cookie_count = len(cookies)
             self._session_file().write_text(
                 json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8"
             )
-        except Exception:  # noqa: BLE001 - 落盘失败不影响主流程
-            pass
+        except Exception as exc:  # noqa: BLE001 - 记录但不再吞掉
+            self.session_save_error = f"{type(exc).__name__}: {exc}"[:200]
 
     async def _restore_session(self) -> None:
         path = self._session_file()
@@ -419,7 +442,21 @@ class SoldeazyBrowser:
                 pass
             await (await self._locate("login_submit")).click()
         else:
-            # 无凭据时留给人工，但别干等十分钟：120 秒没登上就直接报错
+            # 无凭据：无头模式下没有窗口可点，别干等——直接给出可执行的下一步
+            if self.settings.soldeazy_headless:
+                raise EbayMcpError(
+                    "SOLDEAZY_CREDENTIALS_MISSING",
+                    "当前是无头模式且没有配置凭据，无法自动登录，也没有窗口可人工登录。"
+                    "请在 .env 设置 SOLDEAZY_USERNAME / SOLDEAZY_PASSWORD；"
+                    "或设 SOLDEAZY_HEADLESS=0 后调用 soldeazy_open_login 手动登录一次，"
+                    "登录态会写入 profile，之后改回无头仍然可用。",
+                    details={
+                        "headless": True,
+                        "profile_dir": str(self.profile_dir),
+                        "profile_ready": self.profile_ready(),
+                    },
+                )
+            # 有窗口：留给人工，最多等 120 秒
             deadline = min(120.0, self.settings.soldeazy_navigation_timeout * 4)
             await self._wait_logged_in(page, deadline)
 

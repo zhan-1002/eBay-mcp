@@ -157,10 +157,39 @@ uv run playwright install chromium
 
 | 报错 | 原因 | 处理 |
 |---|---|---|
-| `Executable doesn't exist at ...chrome.exe` | 本机没装 Chrome，也没装 Playwright Chromium | `uv run playwright install chromium` |
-| `Unsupported chromium channel` | `SOLDEAZY_BROWSER_CHANNEL` 填了不存在的名字 | 设回 `chrome`，或留空 |
+| `Executable doesn't exist at ...chrome.exe` | 本机没装 Chrome，也没装 Playwright Chromium | 会自动回退到 Edge；仍失败才执行 `uv run playwright install chromium` |
+| `Unsupported chromium channel` | `SOLDEAZY_BROWSER_CHANNEL` 填了不存在的名字 | 会自动回退；也可设回 `chrome` 或留空 |
+| `SOLDEAZY_CREDENTIALS_MISSING` | 无头模式 + 没配凭据 + 没登录过 | 配 `SOLDEAZY_USERNAME/PASSWORD`，或临时 `SOLDEAZY_HEADLESS=0` 手动登录一次 |
 | `write_enabled=false` | 写工具开关没开 | 设 `SOLDEAZY_WRITE_ENABLED=1` |
 | `profile_ready=false` | 还没登录过，profile 目录为空 | 调 `soldeazy_open_login` 登录一次即可，目录会自动创建 |
+
+### 登录态为什么能长期复用
+
+三个前提，缺一个就会退化成"每次都要人工登录"：
+
+1. **登录时勾「记住用户名」** —— 不勾的话服务端只发会话 cookie，关掉浏览器就没了。
+   代码里已经自动勾选，不需要人工操作。
+2. **cookie 落盘** —— 登录成功后把整份 cookie（含会话级 `_ht_ses_`）写进
+   `<profile>/session_cookies.json`，下次启动先 `add_cookies` 再访问。
+3. **落盘必须成功** —— 早期版本把写盘异常吞掉了，profile 目录不可写时会
+   **静默失败**，表现就是"cookie 存不下来"。现在失败原因会记进
+   `soldeazy_status` 的 `session_save_error`。
+
+`soldeazy_status` 会直接告诉你当前处于哪种状态：
+
+```json
+{
+  "credentials_configured": true,
+  "session_file_exists": true,
+  "session_cookie_count": 5,
+  "session_save_error": "",
+  "profile_ready": true
+}
+```
+
+- `credentials_configured=false` 且 `session_file_exists=false`
+  → 两种修法：配凭据（无头也能自动登录），或开有头手动登一次（之后无头仍可用）。
+- `session_save_error` 非空 → 磁盘/权限问题，先修这个，否则每次都会重新登录。
 
 ### 库存表约定（运营手填，可选）
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from ebay_mcp_server.providers.soldeazy import (
@@ -181,3 +183,41 @@ def test_parse_rows_survives_a_column_shift() -> None:
     assert record["site"] == "US"
     assert record["sku"] == "PCPB0028US"
     assert record["price"] == pytest.approx(20.99)
+
+
+def test_status_exposes_session_state_without_credentials(tmp_path) -> None:
+    """无凭据时 status 必须明说，而不是让调用方去猜"为什么要人工登录"。"""
+
+    from dataclasses import replace
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    settings = replace(
+        Settings.load(),
+        soldeazy_username="",
+        soldeazy_password="",
+        soldeazy_profile_dir=str(tmp_path / "profile"),
+    )
+    browser = SoldeazyBrowser(settings)
+    state = asyncio.run(browser.status())
+
+    assert state["credentials_configured"] is False
+    assert state["session_file_exists"] is False
+    assert state["session_cookie_count"] == 0
+    assert state["session_save_error"] == ""
+
+
+def test_save_session_records_error_instead_of_swallowing(tmp_path) -> None:
+    from dataclasses import replace
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    settings = replace(
+        Settings.load(), soldeazy_profile_dir=str(tmp_path / "profile")
+    )
+    browser = SoldeazyBrowser(settings)
+    browser._context = object()  # 有上下文但没有 cookies() 方法
+    asyncio.run(browser._save_session())
+    assert "AttributeError" in browser.session_save_error
