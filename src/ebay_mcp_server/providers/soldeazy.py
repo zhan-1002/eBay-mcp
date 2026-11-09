@@ -235,13 +235,53 @@ class SoldeazyBrowser:
             except Exception as exc:  # noqa: BLE001 - 换下一个候选
                 errors.append(f"{label}: {str(exc).splitlines()[0][:160]}")
 
+        # 最后兜底：直接扫本机已下载的 Chromium（不受版本号不匹配影响）
+        for executable in self._installed_chromium_paths():
+            try:
+                context = await self._playwright.chromium.launch_persistent_context(
+                    str(directory),
+                    headless=self.settings.soldeazy_headless,
+                    executable_path=str(executable),
+                    args=["--disable-blink-features=AutomationControlled"],
+                    locale="zh-CN",
+                )
+                self.browser_channel_used = f"已装 Chromium {executable.parent.parent.name}"
+                return context
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{executable.parent.parent.name}: {str(exc).splitlines()[0][:120]}")
+
         raise EbayMcpError(
             "SOLDEAZY_BROWSER_LAUNCH_FAILED",
-            "浏览器启动失败：本机 Chrome 与内置 Chromium 都不可用。"
-            "请安装 Chrome，或执行 `uv run playwright install chromium`，"
-            "或把 SOLDEAZY_BROWSER_CHANNEL 设为空以使用内置 Chromium。",
+            "浏览器启动失败：本机 Chrome 与已下载的 Chromium 都不可用。"
+            "请安装 Chrome，或执行 `uv run playwright install chromium`。",
             details={"attempts": errors},
         )
+
+    @staticmethod
+    def _installed_chromium_paths() -> list[Path]:
+        """扫本机 ms-playwright 目录下已下载的 Chromium（版本号可能与当前 playwright 不匹配）。"""
+
+        import os
+
+        root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+        base = root / "ms-playwright"
+        if not base.is_dir():
+            return []
+
+        found: list[tuple[int, Path]] = []
+        for entry in base.glob("chromium-*"):
+            if not entry.is_dir() or "headless" in entry.name:
+                continue
+            try:
+                revision = int(entry.name.split("-")[1])
+            except (IndexError, ValueError):
+                continue
+            for relative in ("chrome-win64/chrome.exe", "chrome-win/chrome.exe"):
+                candidate = entry / relative
+                if candidate.is_file():
+                    found.append((revision, candidate))
+        found.sort(reverse=True)  # 版本号大的优先
+        return [path for _revision, path in found]
 
     async def _ensure_page(self) -> Any:
         if self._page is not None:
