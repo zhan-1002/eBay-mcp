@@ -1,4 +1,4 @@
-﻿
+
 
 def test_compact_report_is_small_and_verdict_first():
     """一步工具的返回必须是判决，不是明细。"""
@@ -142,6 +142,57 @@ def test_change_reports_missing_instead_of_noop(tmp_path):
     assert result["ok"] is False
     assert result["missing"] == ["JJPC0029"]
     assert "找不到" in result["problems"][0]
+
+
+def test_empty_site_flows_through_as_all_sites(tmp_path):
+    """不传站点时，"全部" 必须一路传到读取和计划，不能被偷偷替换成 US。"""
+
+    import asyncio
+    import types
+
+    from ebay_mcp_server.providers import soldeazy_change as mod
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    seen: dict[str, object] = {}
+
+    class FakeBrowser:
+        async def read_datasheet_values(self, site, query="", **kwargs):
+            seen["site"] = site
+            return {
+                ("4512957", "JJPC0029"): {
+                    "rowid": "4512957", "parent": "JJPC0029",
+                    "sku": "JJPC0029", "qty": 100, "price": 21.9,
+                }
+            }
+
+    def fake_make_plan(kind, site, picked, items, **kwargs):
+        seen["plan_site"] = site
+        return types.SimpleNamespace(plan_id="price-all", items=list(items))
+
+    async def run():
+        return await mod.run_change(
+            kind="price", site="", targets={"JJPC0029": 23.0}, shop="",
+            dry_run=True, sync=True, sync_price=True, sync_quantity=False,
+            verbose=False, only_listed=True,
+            deps={
+                "build_items": build_items,
+                "make_plan": fake_make_plan,
+                "write_draft": lambda *a, **k: None,
+                "freeze": lambda *a, **k: None,
+                "load_verified": lambda *a, **k: (None, ""),
+                "apply_plan": None,
+                "reconcile": None,
+                "plan_dir": tmp_path,
+                "browser": FakeBrowser(),
+                "resolve_shop": _async_shop,
+            },
+        )
+
+    result = asyncio.run(run())
+    assert seen["site"] == ""
+    assert seen["plan_site"] == ""
+    assert result["dry_run"] is True
+    assert result["items"] == 1
 
 
 def test_change_reports_noop_when_already_at_target(tmp_path):

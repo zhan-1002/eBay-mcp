@@ -144,12 +144,36 @@ def test_new_write_tools_default_to_dry_run():
         assert inspect.signature(tool).parameters["dry_run"].default is True
 
 
-def test_search_datasheet_requires_site_but_allows_empty_query():
-    import asyncio
+def test_search_datasheet_site_defaults_to_all_sites():
+    """不传站点 = 全部站点，不再直接报错要求先问用户。"""
 
-    result = asyncio.run(server.soldeazy_search_datasheet(""))
-    assert result["success"] is False
-    assert result["error"]["code"] == "SOLDEAZY_SITE_REQUIRED"
+    import inspect
+
+    signature = inspect.signature(server.soldeazy_search_datasheet)
+    assert signature.parameters["site"].default == ""
+
+    for tool in (server.soldeazy_change_price, server.soldeazy_change_stock):
+        assert inspect.signature(tool).parameters["site"].default == ""
+
+
+def test_site_hint_tells_the_user_when_all_sites_are_used():
+    assert server._site_hint("US") == {}
+    assert server._site_hint("  us ") == {}
+    hint = server._site_hint("")
+    assert hint["site"] == "ALL"
+    assert "全部站点" in hint["site_notice"]
+    assert "全部站点" in server._site_hint("   ")["site_notice"]
+
+
+def test_change_targets_stay_required_positional_first():
+    """targets 是必填参数，必须排在带默认值的 site 之前，否则签名非法。"""
+
+    import inspect
+
+    for tool in (server.soldeazy_change_price, server.soldeazy_change_stock):
+        params = list(inspect.signature(tool).parameters)
+        assert params[0] == "targets"
+        assert params[1] == "site"
 
 
 def test_plan_tools_reject_empty_plan_id():
@@ -238,6 +262,48 @@ def test_output_guard_passes_small_payload():
     from ebay_mcp_server.server import _output_too_large
 
     assert _output_too_large({"ok": True, "items": 8}) is None
+
+
+def test_list_shops_is_capped_and_hints_keyword(monkeypatch):
+    """生产账号 85 个，全量倒进对话很贵：默认只回 20 个并提示用 keyword。"""
+
+    import asyncio
+
+    shops = [{"id": str(4000 + i), "name": f"EBAY S{i:02d}"} for i in range(85)]
+    shops[10] = {"id": "159", "name": "EBAY FUN"}
+
+    async def fake_list():
+        return shops
+
+    monkeypatch.setattr(server.soldeazy, "list_shop_options", fake_list)
+
+    page = asyncio.run(server.soldeazy_list_shops())["data"]
+    assert page["count"] == 85
+    assert len(page["shops"]) == 20
+    assert page["has_more"] is True
+    assert "keyword" in page["hint"]
+
+    tail = asyncio.run(server.soldeazy_list_shops(offset=80))["data"]
+    assert len(tail["shops"]) == 5
+    assert tail["has_more"] is False
+    assert "hint" not in tail          # 已经看到尾了就不用再提示
+
+    found = asyncio.run(server.soldeazy_list_shops(keyword="FUN"))["data"]
+    assert found["count"] == 1
+    assert found["shops"][0]["id"] == "159"
+
+
+def test_schema_requires_only_targets_for_change_tools(monkeypatch):
+    """site 变成可选后，schema 里必填项应该只剩 targets。"""
+
+    import asyncio
+
+    schemas = {tool.name: tool.inputSchema for tool in asyncio.run(server.mcp.list_tools())}
+    for name in ("soldeazy_change_price", "soldeazy_change_stock", "soldeazy_plan_changes"):
+        required = schemas[name].get("required") or []
+        assert "targets" in required
+        assert "site" not in required
+    assert "site" not in (schemas["soldeazy_search_datasheet"].get("required") or [])
 
 
 def test_expensive_tools_require_confirmation_flag():

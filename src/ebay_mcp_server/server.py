@@ -615,7 +615,7 @@ def _output_too_large(payload: dict[str, Any], *, allow: bool = False) -> dict[s
 
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def soldeazy_search_datasheet(
-    site: str,
+    site: str = "",
     skus: list[str] | None = None,
     search_text: str = "",
     limit: int = 50,
@@ -630,24 +630,23 @@ async def soldeazy_search_datasheet(
     SKU and its ``US``/``x2``/``x4`` variants come back in one query. Pass
     ``search_text`` to use the box verbatim instead.
 
+    ``site`` 可省略：**不传就是全部站点**（Soldeazy 站点下拉「不勾选 = 全部」），
+    省掉先反问用户一轮。返回里会带 ``site_notice`` 告知实际范围。
+
     **返回条数默认上限 50 条**（``limit``，最多 200）。生产账号一次可能几千条，
     全量返回会在对话里吃掉几十万 token；确实需要全量时用 ``offset`` 翻页。
     ``with_title`` 默认关闭——标题是单行最占字的部分。
     """
-    # 空查询是合法的：等于「这个渠道账号 + 站点下的全部数据表」，
+    # 空查询是合法的：等于「这个渠道账号下的全部数据表」，
     # 计划预览内部就是这么读的，工具层不该比它还严。
     query = _search_text(skus, search_text)
-    if not site:
-        return tool_error(
-            "soldeazy_search_datasheet",
-            EbayMcpError("SOLDEAZY_SITE_REQUIRED", "必须给出 site（US/UK/DE…）。"),
-        )
     try:
         data = await soldeazy.search(query, site, only_listed=not include_unlisted)
         rows = data.get("rows") or []
         payload = {
             **{k: v for k, v in data.items() if k != "rows"},
             **_cap_rows(rows, limit=limit, offset=offset, with_title=with_title),
+            **_site_hint(site),
         }
         blocked = _output_too_large(payload, allow=allow_large_output)
         if blocked is not None:
@@ -690,6 +689,22 @@ def _shop_scope(found: dict[str, Any]) -> list[str]:
 
     names = {(row.get("shop") or "").strip() for row in found.get("rows") or []}
     return sorted(name for name in names if name)
+
+
+def _site_hint(site: str) -> dict[str, Any]:
+    """不指定站点时按「全部站点」执行，并明确告诉调用方。
+
+    Soldeazy 的站点下拉是「不勾选 = 全部」，所以传空站点就是不动那个下拉框，
+    一次搜索/导出/上传就能覆盖全部站点——不需要逐站点循环，成本不翻倍。
+    这样用户不说明站点时也不用先反问一轮，省一整次往返的 token。
+    """
+
+    if (site or "").strip():
+        return {}
+    return {
+        "site": "ALL",
+        "site_notice": "未指定站点，已按「全部站点」执行（不勾选站点即全部）。",
+    }
 
 
 def _manifest_path() -> str:
@@ -1050,24 +1065,40 @@ def _manifest_path() -> str:
 
 
 @mcp.tool(annotations=READ_ONLY_NETWORK)
-async def soldeazy_list_shops(keyword: str = "") -> dict[str, Any]:
+async def soldeazy_list_shops(
+    keyword: str = "",
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, Any]:
     """List the channel accounts (eBay shops) this login may operate.
 
     Returns each shop's id and short name; `keyword` filters by name. The list
     comes from the datasheet search form, which reflects the site's own
     authorisation rather than a guessed inventory.
+
+    **默认只回 20 个**（生产账号有 85 个，全量倒进对话约 1200 token）。
+    只记得部分名字时先传 `keyword`（如 `FUN`、`LT`），比翻页更省。
     """
+
     try:
         shops = await soldeazy.list_shop_options()
         active = soldeazy.active_shop or {}
         if keyword:
             needle = keyword.strip().upper()
             shops = [s for s in shops if needle in s["name"].upper() or needle in s["id"]]
-        return success(
-            "soldeazy_list_shops",
-            "soldeazy",
-            {"count": len(shops), "active": active, "shops": shops},
-        )
+        total = len(shops)
+        page = max(1, min(int(limit), 200))
+        start = max(0, int(offset))
+        window = shops[start : start + page]
+        payload = {
+            "count": total,
+            "active": active,
+            "shops": window,
+            "has_more": start + len(window) < total,
+        }
+        if start + len(window) < total and not keyword:
+            payload["hint"] = "账号较多：传 keyword 只查需要的那个，比翻页省 token。"
+        return success("soldeazy_list_shops", "soldeazy", payload)
     except EbayMcpError as exc:
         return tool_error("soldeazy_list_shops", exc)
     except Exception as exc:  # pragma: no cover - browser safety boundary
@@ -1121,8 +1152,8 @@ async def _resolve_shop_id(shop: str) -> dict[str, str]:
 
 @mcp.tool(annotations=REMOTE_WRITE)
 async def soldeazy_change_price(
-    site: str,
     targets: dict[str, float],
+    site: str = "",
     shop: str = "",
     dry_run: bool = False,
     sync_price: bool = True,
@@ -1137,6 +1168,9 @@ async def soldeazy_change_price(
     这里服务端自己校验，只回 `ok` + 计数 + 问题列表（最多 10 条）。
 
     `targets` 是 `{子体SKU: 新价格}`，价格按给定值精确写入。
+    `site` 可省略：**不传就是全部站点**（不勾选站点即全部），一次搜索/导出/上传
+    覆盖全部站点；返回里带 `site_notice` 告知范围。这样用户不说明站点时
+    不必先反问一轮，省一整次往返的 token。
     `dry_run=True` 只出计划不写盘。
     """
 
@@ -1174,6 +1208,7 @@ async def soldeazy_change_price(
                 "resolve_shop": _resolve_shop_id,
             },
         )
+        data.update(_site_hint(site))
         blocked = _output_too_large(data, allow=allow_large_output)
         if blocked is not None:
             return blocked
@@ -1190,8 +1225,8 @@ async def soldeazy_change_price(
 
 @mcp.tool(annotations=REMOTE_WRITE)
 async def soldeazy_change_stock(
-    site: str,
     targets: dict[str, float],
+    site: str = "",
     shop: str = "",
     dry_run: bool = False,
     verbose: bool = False,
@@ -1202,6 +1237,8 @@ async def soldeazy_change_stock(
 
     `targets` 是 `{母体SKU: 数量}`，会写进该母体下的所有行
     （母体行 + 全部子体行），数量是绝对值。
+
+    `site` 可省略：**不传就是全部站点**，返回里带 `site_notice` 告知范围。
     """
 
     try:
@@ -1238,6 +1275,7 @@ async def soldeazy_change_stock(
                 "resolve_shop": _resolve_shop_id,
             },
         )
+        data.update(_site_hint(site))
         blocked = _output_too_large(data, allow=allow_large_output)
         if blocked is not None:
             return blocked
@@ -1433,8 +1471,8 @@ def _plan_dir() -> Path:
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def soldeazy_plan_changes(
     kind: str,
-    site: str,
     targets: dict[str, float],
+    site: str = "",
     shop: str = "",
     supersedes: str = "",
     allow_large_output: bool = False,
@@ -1445,6 +1483,8 @@ async def soldeazy_plan_changes(
 
     * price → SKU is the **child** SKU; the price written is exactly this value;
     * qty   → SKU is the **parent** SKU; every row under it gets this quantity.
+
+    ``site`` 可省略：**不传就是全部站点**，返回里带 ``site_notice``。
 
     Nothing is written. The plan stays a rewritable draft until
     ``soldeazy_confirm_plan`` freezes it.
@@ -1472,7 +1512,7 @@ async def soldeazy_plan_changes(
             "plan_id": plan.plan_id if items else "",
             "path": path,
             "kind": kind,
-            "site": site,
+            **_site_hint(site),
             "shop": picked,
             "rows_in_scope": len(live),
             "planned_items": len(items),
