@@ -221,6 +221,30 @@ def test_shop_scope_hint_tolerates_prefixed_shop_names() -> None:
     assert hint["shop_scope_mismatch"] is False
 
 
+def test_launch_error_tells_profile_lock_apart_from_missing_browser():
+    """抢不到 profile 绝不能报成"找不到 Chrome"——那是两个完全不同的病。"""
+
+    from pathlib import Path
+
+    from ebay_mcp_server.providers.soldeazy import launch_error
+
+    locked = launch_error(
+        Path("x"),
+        ["chrome: BrowserType.launch_persistent_context: ProcessSingleton: "
+         "user data directory is already in use"],
+        tried=["chrome"],
+    )
+    assert locked.code == "SOLDEAZY_PROFILE_LOCKED"
+    assert "只有一个会话" in locked.message
+
+    denied = launch_error(Path("x"), ["chrome: EPERM access denied"], tried=["chrome"])
+    assert denied.code == "SOLDEAZY_BROWSER_LAUNCH_DENIED"
+
+    missing = launch_error(Path("x"), ["chrome: Executable doesn't exist"], tried=["chrome"])
+    assert missing.code == "SOLDEAZY_BROWSER_LAUNCH_FAILED"
+    assert missing.details["tried"] == ["chrome"]
+
+
 def test_status_exposes_session_state_without_credentials(tmp_path) -> None:
     """无凭据时 status 必须明说，而不是让调用方去猜"为什么要人工登录"。"""
 

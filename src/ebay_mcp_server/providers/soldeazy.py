@@ -196,6 +196,65 @@ def _shop_scope_hint(shop: str, records: list[dict[str, Any]] | None = None) -> 
     return hint
 
 
+def launch_error(
+    directory: Path, errors: list[str], tried: list[str] | None = None
+) -> EbayMcpError:
+    """把浏览器启动失败分类成可操作的错误。
+
+    三类：profile 被别的进程占用 / 权限被拒 / 真的没浏览器。
+    第一类最常见也最容易被误解成"装坏了"：Chromium 一个 user-data-dir
+    同时只允许一个进程打开，所以 stdio 模式下第二个会话必然抢不到。
+    """
+
+    joined = " ".join(errors)
+    lowered = joined.lower()
+    locked = any(
+        word in lowered
+        for word in (
+            "processsingleton",
+            "singletonlock",
+            "singleton",
+            "already in use",
+            "is already running",
+        )
+    ) or ("lock" in lowered and "profile" in lowered)
+    if locked:
+        return EbayMcpError(
+            "SOLDEAZY_PROFILE_LOCKED",
+            f"浏览器 profile 已被另一个进程占用：{directory}。"
+            "Chromium 一个 user-data-dir 同时只允许一个进程打开，"
+            "所以同一时间只有一个会话能用 Soldeazy 工具——"
+            "这与 MCP 是否全局安装无关：stdio 模式下每个会话各自起一个服务进程，"
+            "第二个进程抢不到 profile。"
+            "要多会话共用，请改用一个常驻服务（ebay-mcp-server --transport sse）"
+            "让所有会话连同一个进程；或给每个会话配不同的 SOLDEAZY_PROFILE_DIR。",
+            details={"attempts": errors},
+        )
+    if any(
+        word in joined
+        for word in ("Permission", "EPERM", "Access is denied", "拒绝访问", "EACCES")
+    ):
+        return EbayMcpError(
+            "SOLDEAZY_BROWSER_LAUNCH_DENIED",
+            "浏览器已找到，但启动被拒绝（权限/沙箱）。"
+            f"进程需要对 profile 目录 {directory} 和临时目录有写权限；"
+            "如果 MCP 跑在沙箱里，请把这两个目录加入白名单，"
+            "或把它们指到工作区内的可写路径。",
+            details={"attempts": errors},
+        )
+    return EbayMcpError(
+        "SOLDEAZY_BROWSER_LAUNCH_FAILED",
+        "浏览器启动失败：本机没有可用的 Chrome / Edge / Chromium。"
+        "最省事的修法是执行 uv run playwright install chromium，"
+        "装好后重试即可；也可以安装 Chrome 或 Edge。",
+        details={
+            "tried": tried or [],
+            "attempts": errors,
+            "hint": "LOCALAPPDATA=" + (os.environ.get("LOCALAPPDATA") or "(未设置)"),
+        },
+    )
+
+
 class SoldeazyBrowser:
     """Drive the Soldeazy datasheet UI with one persistent browser profile."""
 
@@ -299,31 +358,7 @@ class SoldeazyBrowser:
                 errors.append(f"{label}: {str(exc).splitlines()[0][:150]}")
 
         # 分清「没装浏览器」和「装了但起不来（权限/沙箱/被占用）」，别用一句话糊弄过去
-        joined = " ".join(errors)
-        if any(
-            word in joined
-            for word in ("Permission", "EPERM", "Access is denied", "拒绝访问", "EACCES")
-        ):
-            raise EbayMcpError(
-                "SOLDEAZY_BROWSER_LAUNCH_DENIED",
-                "浏览器已找到，但启动被拒绝（权限/沙箱）。"
-                f"进程需要对 profile 目录 {directory} 和临时目录有写权限；"
-                "如果 MCP 跑在沙箱里，请把这两个目录加入白名单，"
-                "或把它们指到工作区内的可写路径。",
-                details={"attempts": errors},
-            )
-
-        raise EbayMcpError(
-            "SOLDEAZY_BROWSER_LAUNCH_FAILED",
-            "浏览器启动失败：本机没有可用的 Chrome / Edge / Chromium。"
-            "最省事的修法是执行 uv run playwright install chromium，"
-            "装好后重试即可；也可以安装 Chrome 或 Edge。",
-            details={
-                "tried": [step["label"] for step in plan],
-                "attempts": errors,
-                "hint": "LOCALAPPDATA=" + (os.environ.get("LOCALAPPDATA") or "(未设置)"),
-            },
-        )
+        raise launch_error(directory, errors)
 
     async def _ensure_page(self) -> Any:
         if self._page is not None:
