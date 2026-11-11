@@ -23,14 +23,18 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from ebay_mcp_server.config import Settings
 from ebay_mcp_server.errors import EbayMcpError
+
+logger = logging.getLogger("ebay_mcp.soldeazy")
 
 BASE_URL = "https://stiger.soldeazy.com"
 LIST_PATH = "/app/soldeazy/datasheet/dsheet_list?default_search_profile"
@@ -197,7 +201,10 @@ def _shop_scope_hint(shop: str, records: list[dict[str, Any]] | None = None) -> 
 
 
 def launch_error(
-    directory: Path, errors: list[str], tried: list[str] | None = None
+    directory: Path,
+    errors: list[str],
+    tried: list[str] | None = None,
+    idle_seconds: float = 300.0,
 ) -> EbayMcpError:
     """把浏览器启动失败分类成可操作的错误。
 
@@ -226,7 +233,9 @@ def launch_error(
             "所以同一时间只有一个会话能用 Soldeazy 工具——"
             "这与 MCP 是否全局安装无关：stdio 模式下每个会话各自起一个服务进程，"
             "第二个进程抢不到 profile。"
-            "要多会话共用，请改用一个常驻服务（ebay-mcp-server --transport sse）"
+            f"占用方空闲 {idle_seconds:.0f} 秒后会自动释放这把锁"
+            "（SOLDEAZY_BROWSER_IDLE_SECONDS，0=不释放），稍等重试通常即可；"
+            "要多会话实时共用，请改用一个常驻服务（ebay-mcp-server --transport sse）"
             "让所有会话连同一个进程；或给每个会话配不同的 SOLDEAZY_PROFILE_DIR。",
             details={"attempts": errors},
         )
@@ -279,6 +288,45 @@ class SoldeazyBrowser:
         self.browser_channel_used: str = ""
         self.session_save_error: str = ""
         self.session_cookie_count: int = 0
+        #: 空闲自动释放：最后一次碰浏览器的时间 + 挂着的释放任务
+        self._last_used: float = time.monotonic()
+        self._idle_task: asyncio.Task | None = None
+
+    # ---------- 浏览器空闲释放 ----------
+    def _touch(self) -> None:
+        """记录"浏览器刚被用过"，并把空闲释放的计时器往后推。"""
+
+        self._last_used = time.monotonic()
+        self._schedule_idle_release()
+
+    def _schedule_idle_release(self) -> None:
+        idle = float(self.settings.soldeazy_browser_idle_seconds or 0)
+        if idle <= 0:
+            return
+        if self._idle_task is not None and not self._idle_task.done():
+            self._idle_task.cancel()
+        try:
+            self._idle_task = asyncio.ensure_future(self._idle_release(idle))
+        except RuntimeError:  # 没有事件循环（纯单测里直接构造对象）
+            self._idle_task = None
+
+    async def _idle_release(self, idle: float) -> None:
+        """空闲满 idle 秒就关浏览器、交还 profile 锁。
+
+        关闭前先落盘 cookie（close() 里做），所以下一个抢到锁的进程
+        不用重新登录。正在跑 search（持有 _lock）时顺延一轮，不掐业务。
+        """
+
+        await asyncio.sleep(idle)
+        if self._context is None:
+            return
+        if self._lock.locked():
+            self._schedule_idle_release()
+            return
+        logger.info("Soldeazy 浏览器空闲 %.0f 秒，释放 profile 锁", idle)
+        # 先摘引用再关：close() 会取消 _idle_task，不能取消正在运行的自己
+        self._idle_task = None
+        await self.close()
 
     # ---------- 生命周期 ----------
     @property
@@ -315,6 +363,7 @@ class SoldeazyBrowser:
             "browser_open": self._page is not None,
             "browser_channel_configured": self.settings.soldeazy_browser_channel or "(内置 Chromium)",
             "browser_channel_used": self.browser_channel_used or "(未启动)",
+            "browser_idle_release_seconds": self.settings.soldeazy_browser_idle_seconds,
             "headless": self.settings.soldeazy_headless,
             "dirs": self.dir_health(),
         }
@@ -358,9 +407,15 @@ class SoldeazyBrowser:
                 errors.append(f"{label}: {str(exc).splitlines()[0][:150]}")
 
         # 分清「没装浏览器」和「装了但起不来（权限/沙箱/被占用）」，别用一句话糊弄过去
-        raise launch_error(directory, errors)
+        raise launch_error(
+            directory,
+            errors,
+            tried=[step["label"] for step in plan],
+            idle_seconds=self.settings.soldeazy_browser_idle_seconds,
+        )
 
     async def _ensure_page(self) -> Any:
+        self._touch()
         if self._page is not None:
             return self._page
         if not _selector_available():
@@ -465,6 +520,9 @@ class SoldeazyBrowser:
             pass
 
     async def close(self) -> None:
+        if self._idle_task is not None and not self._idle_task.done():
+            self._idle_task.cancel()
+        self._idle_task = None
         if self._context is not None:
             await self._save_session()
             await self._context.close()

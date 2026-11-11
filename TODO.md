@@ -295,6 +295,18 @@
 `synced=ok` 只代表同步接口返回 200。该分支目前只有单测覆盖，等出现"有同步任务且
 条数对不上"的账号才能实机验证。
 
+### 7. 多会话共用与 profile 锁（2026-11-11）
+
+- **机制**：Chromium 一个 user-data-dir 只允许一个进程打开；stdio 模式每会话一个
+  服务进程 → 第二个会话抢不到 `.soldeazy-data\profile`。与"全局安装"无关。
+- **旧代码把抢锁失败误报成 `SOLDEAZY_BROWSER_LAUNCH_FAILED`**（找不到 Chrome），
+  已拆出 `SOLDEAZY_PROFILE_LOCKED`（`launch_error()` 三分类）。
+- **空闲自动释放**：`SOLDEAZY_BROWSER_IDLE_SECONDS`（默认 300，0=关）。
+  空闲到点先落盘 cookie 再关浏览器，锁交还；持 `_lock`（search 进行中）时顺延。
+  会话之间从"互斥"变成"接力"。
+- **实时共用仍只有一条路**：`ebay-mcp-server --transport sse` 常驻单例。
+- 注意：空闲释放只对**跑新代码的进程**生效；11-09 那串旧服务进程必须重启才受益。
+
 待办：
 - [ ] 第 1 条的真实复现：等 FUN 再有未刊登数据表时验证 `warnings` 生效。
 - [x] 默认 `limit=50` 与 4000 字符闸门自相矛盾 —— 已把默认降到 20，

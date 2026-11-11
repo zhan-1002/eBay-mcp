@@ -263,6 +263,7 @@ soldeazy_change_price(targets={}, targets_file="targets.csv")
 | 项 | 默认 | 说明 |
 |---|---|---|
 | `SOLDEAZY_HEADLESS` | `1`（无头） | 日常零窗口；只有首次登录需要人工时才开有头 |
+| `SOLDEAZY_BROWSER_IDLE_SECONDS` | `300` | 浏览器空闲多久后自动关闭、交还 profile 锁；0=不释放。关闭前先落盘 cookie，下个进程免登录复用 |
 | `SOLDEAZY_EXPORT_CHANNEL` | `page` | 可切 `cookie`，两者输出逐格一致（已验收） |
 | `SOLDEAZY_BROWSER_CHANNEL` | `chrome` | 见下方"浏览器内核" |
 | `SOLDEAZY_PROFILE_DIR` | 未设时 `%LOCALAPPDATA%\ebay-mcp\profiles\soldeazy` | 登录态存放位置。**本仓库实机必须显式设成 `<仓库>\.soldeazy-data\profile`**，见下方说明 |

@@ -245,6 +245,83 @@ def test_launch_error_tells_profile_lock_apart_from_missing_browser():
     assert missing.details["tried"] == ["chrome"]
 
 
+def test_idle_release_closes_browser_after_idle() -> None:
+    """空闲到点就关浏览器、交还 profile 锁；cookie 由 close() 落盘。"""
+
+    import asyncio
+    import dataclasses
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers import soldeazy as mod
+
+    browser = mod.SoldeazyBrowser(Settings.load())
+    browser.settings = dataclasses.replace(
+        browser.settings, soldeazy_browser_idle_seconds=0.05
+    )
+    closed: list[bool] = []
+
+    async def fake_close() -> None:
+        closed.append(True)
+        browser._context = None
+
+    browser.close = fake_close  # type: ignore[method-assign]
+    browser._context = object()
+
+    async def run() -> None:
+        browser._touch()
+        await asyncio.sleep(0.25)
+
+    asyncio.run(run())
+    assert closed == [True]
+    assert browser._context is None
+
+
+def test_idle_release_disabled_when_zero() -> None:
+    import dataclasses
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers import soldeazy as mod
+
+    browser = mod.SoldeazyBrowser(Settings.load())
+    browser.settings = dataclasses.replace(
+        browser.settings, soldeazy_browser_idle_seconds=0
+    )
+    browser._touch()
+    assert browser._idle_task is None
+
+
+def test_idle_release_defers_while_search_lock_held() -> None:
+    """search 跑到一半绝不能被释放：持锁时顺延一轮。"""
+
+    import asyncio
+    import dataclasses
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers import soldeazy as mod
+
+    browser = mod.SoldeazyBrowser(Settings.load())
+    browser.settings = dataclasses.replace(
+        browser.settings, soldeazy_browser_idle_seconds=0.05
+    )
+    closed: list[bool] = []
+
+    async def fake_close() -> None:
+        closed.append(True)
+
+    browser.close = fake_close  # type: ignore[method-assign]
+    browser._context = object()
+
+    async def run() -> None:
+        async with browser._lock:
+            browser._touch()
+            await asyncio.sleep(0.12)
+            assert closed == []          # 计时器到点但锁还在 → 顺延
+        await asyncio.sleep(0.25)        # 放锁后的下一轮才真正释放
+        assert closed == [True]
+
+    asyncio.run(run())
+
+
 def test_status_exposes_session_state_without_credentials(tmp_path) -> None:
     """无凭据时 status 必须明说，而不是让调用方去猜"为什么要人工登录"。"""
 

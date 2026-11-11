@@ -76,6 +76,8 @@ class Settings:
     soldeazy_browser_channel: str = "chrome"
     soldeazy_navigation_timeout: float = 45.0
     soldeazy_min_delay: float = 2.0
+    #: 浏览器空闲多少秒后自动释放（交还 profile 锁）。0 = 不自动释放。
+    soldeazy_browser_idle_seconds: float = 300.0
     soldeazy_username: str = ""
     soldeazy_password: str = ""
     soldeazy_write_enabled: bool = False
@@ -151,6 +153,9 @@ class Settings:
             ),
             soldeazy_min_delay=max(
                 0.0, min(float(_env("SOLDEAZY_MIN_DELAY", "2")), 60.0)
+            ),
+            soldeazy_browser_idle_seconds=max(
+                0.0, min(float(_env("SOLDEAZY_BROWSER_IDLE_SECONDS", "300")), 3600.0)
             ),
             soldeazy_username=str(_env("SOLDEAZY_USERNAME", "")).strip(),
             soldeazy_password=str(_env("SOLDEAZY_PASSWORD", "")).strip(),
