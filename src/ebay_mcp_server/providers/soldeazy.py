@@ -21,6 +21,7 @@ the 影刀 selector list and still need one live run before they are trusted.
 from __future__ import annotations
 
 import asyncio
+import html as htmllib
 import importlib.util
 import json
 import logging
@@ -30,6 +31,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+from urllib.parse import urlencode
 
 from ebay_mcp_server.config import Settings
 from ebay_mcp_server.errors import EbayMcpError
@@ -279,6 +281,178 @@ def looks_logged_in(html: str) -> bool:
     return False
 
 
+_FORM_CONTROL = re.compile(
+    r"<select\b.*?</select>|<input\b[^>]*>|<textarea\b.*?</textarea>",
+    re.S | re.I,
+)
+_OPTION = re.compile(r"<option\b([^>]*)>(.*?)</option>", re.S | re.I)
+_ATTR = re.compile(r"(\w[\w-]*)\s*=\s*[\"']([^\"']*)[\"']", re.I)
+_CELL = re.compile(r"<t[dh]\b.*?</t[dh]>", re.S | re.I)
+_ROW = re.compile(r"<tr\b.*?</tr>", re.S | re.I)
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _tag_attrs(tag: str) -> dict[str, str]:
+    return {m.group(1).lower(): m.group(2) for m in _ATTR.finditer(tag)}
+
+
+def parse_form_state(html: str) -> dict[str, list[str]]:
+    """把搜索表单的当前状态读成 ``{name: [values]}``（多选/重名保留多值）。
+
+    和浏览器提交时的序列化口径一致：checkbox/radio 只取 checked，
+    select 取 selected（一个都没有就取第一项），hidden/text 取 value。
+    定位方式是找含 ``btn_search`` 的那个 form——页面有嵌套 form，
+    按 ``<form>...</form>`` 直接切会切错。
+    """
+
+    anchor = html.find("btn_search")
+    if anchor < 0:
+        return {}
+    start = html.rfind("<form", 0, anchor)
+    end = html.find("</form>", anchor)
+    if start < 0 or end < 0:
+        return {}
+    block = html[start:end]
+
+    state: dict[str, list[str]] = {}
+
+    def add(name: str, value: str) -> None:
+        if not name:
+            return
+        state.setdefault(name, []).append(value)
+
+    for match in _FORM_CONTROL.finditer(block):
+        tag = match.group(0)
+        head = tag[: tag.find(">") + 1]
+        attrs = _tag_attrs(head)
+        name = attrs.get("name", "")
+        kind = tag.split()[0][1:].lower()
+        if kind == "select":
+            options = _OPTION.findall(tag)
+            picked = [
+                (_tag_attrs(raw).get("value", htmllib.unescape(_TAG.sub("", body)).strip()))
+                for raw, body in options
+                if "selected" in raw.lower()
+            ]
+            if not picked and options:
+                first_raw, first_body = options[0]
+                picked = [
+                    _tag_attrs(first_raw).get(
+                        "value", htmllib.unescape(_TAG.sub("", first_body)).strip()
+                    )
+                ]
+            for value in picked:
+                add(name, value)
+        elif kind == "textarea":
+            add(name, htmllib.unescape(_TAG.sub("", tag[tag.find(">") + 1 :])).strip())
+        else:
+            input_type = (attrs.get("type") or "text").lower()
+            if input_type in {"submit", "button", "image", "reset"} and name != "btn_search":
+                continue
+            if input_type in {"checkbox", "radio"} and "checked" not in head.lower():
+                continue
+            add(name, attrs.get("value", ""))
+    return state
+
+
+def cell_text_from_html(cell: str) -> str:
+    """<td> 片段转单元格文本：<br> 是变体分隔符，要变成换行。"""
+
+    text = re.sub(r"<br\s*/?>", "\n", cell, flags=re.I)
+    text = _TAG.sub("", text)
+    return htmllib.unescape(text).strip()
+
+
+def parse_result_table(html: str) -> list[list[str]]:
+    """从搜索结果 HTML 里抠出 ``#tbl_dSheet`` 的单元格矩阵（含表头行）。
+
+    两个真机坑（2026-11-11）：
+    - 单元格里嵌着子表格，非贪心的 ``.*?</table>`` 会在子表格处截断；
+    - 数据行里也嵌着 ``<tr>``（变体/标题子表），非贪心的 ``.*?</tr>`` 会把
+      外层行在嵌套 ``</tr>`` 处切断，丢掉尾部 SKU/价格列。
+    表格和行都按嵌套深度切；单元格则保留全部后代 td/th 的文档序——
+    与 DOM 通道 ``locator("th,td")`` 的口径一致。
+    """
+
+    match = re.search(r"<table\b[^>]*id=[\"']tbl_dSheet[\"']", html, re.I)
+    if not match:
+        return []
+    block = _slice_table(html, match.start())
+    return [
+        [cell_text_from_html(cell) for cell in _CELL.findall(row)]
+        for row in _top_level_rows(block)
+    ]
+
+
+def _top_level_rows(block: str) -> list[str]:
+    """按 <tr> 嵌套深度切出顶层行（嵌套子表的行并入父行文本）。"""
+
+    rows: list[str] = []
+    depth = 0
+    start = -1
+    for match in re.finditer(r"<tr\b|</tr>", block, re.I):
+        if match.group(0).lower().startswith("<tr"):
+            depth += 1
+            if depth == 1:
+                start = match.start()
+        else:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                rows.append(block[start : match.end()])
+                start = -1
+    return rows
+
+
+def _slice_table(html: str, start: int) -> str:
+    """从 start 处的 <table> 起，按嵌套深度切到配对的 </table>。"""
+
+    depth = 0
+    for match in re.finditer(r"<table\b|</table>", html[start:], re.I):
+        depth += 1 if match.group(0).lower().startswith("<table") else -1
+        if depth == 0:
+            return html[start : start + match.end()]
+    return html[start:]
+
+
+def extract_total_records(html: str) -> int:
+    """分页条上的总记录数（形如「1,636 笔记录」），读不到返回 0。"""
+
+    match = re.search(r"([\d,]+)\s*笔记录", html)
+    if not match:
+        return 0
+    return int(match.group(1).replace(",", ""))
+
+
+def extract_sql_token(html: str) -> str:
+    """搜索页里的 ``sql_cache_token``（单双引号都见过），同步接口要用。"""
+
+    match = re.search(
+        r"name=[\"']sql_cache_token[\"'][^>]*value=[\"']([^\"']*)[\"']", html, re.I
+    )
+    if match:
+        return htmllib.unescape(match.group(1))
+    match = re.search(
+        r"value=[\"']([^\"']*)[\"'][^>]*name=[\"']sql_cache_token[\"']", html, re.I
+    )
+    return htmllib.unescape(match.group(1)) if match else ""
+
+
+def parse_shop_options(html: str) -> list[dict[str, str]]:
+    """从列表页 HTML 里读渠道账号下拉（``listshop[]``）的选项。"""
+
+    match = re.search(r"<select\b[^>]*name=[\"']listshop\[\][\"'].*?</select>", html, re.S | re.I)
+    if not match:
+        return []
+    options = []
+    for raw, body in _OPTION.findall(match.group(0)):
+        attrs = _tag_attrs(raw)
+        value = attrs.get("value", "")
+        name = htmllib.unescape(_TAG.sub("", body)).strip()
+        if value and name:
+            options.append({"id": value, "name": name})
+    return options
+
+
 class SoldeazyBrowser:
     """Drive the Soldeazy datasheet UI with one persistent browser profile."""
 
@@ -300,6 +474,8 @@ class SoldeazyBrowser:
         self._last_status_value: str = ""
         self._last_date: str = ""
         self._last_date_value: str = ""
+        #: 最近一次搜索页下发的同步令牌；同步接口必须用它，不能沿用旧值
+        self._last_sql_token: str = ""
         self.browser_channel_used: str = ""
         self.session_save_error: str = ""
         self.session_cookie_count: int = 0
@@ -741,7 +917,8 @@ class SoldeazyBrowser:
     async def search(
         self, sku_terms: str, site: str, shop: str = "", *, only_listed: bool = True
     ) -> dict[str, Any]:
-        """Search one site by a space-joined SKU string and read the results.
+        """搜索并读回结果。**HTTP 通道优先**（不碰浏览器、不抢 profile 锁），
+        HTTP 不可用时回退 DOM 通道。
 
         `only_listed` 默认开启：只搜「已刊登」的数据表。
         改价/改库存只对已刊登的有意义——未刊登的同步不到 eBay，
@@ -750,80 +927,214 @@ class SoldeazyBrowser:
 
         self._last_query = sku_terms or ""
         self._last_site = site or ""
+        shop = shop or ((self.active_shop or {}).get("name") or "")
         async with self._lock:
-            page = await self._ensure_page()
-            await self._goto(f"{self.base_url}{LIST_PATH}")
-            await self._dismiss_popup()
-
-            await (await self._locate("search_sku")).fill(sku_terms)
-            if site:
-                await self._select_site(site)
-            shop = shop or ((self.active_shop or {}).get("name") or "")
-            if shop:
-                await self._select_shop(shop)
-            # 修改日期默认留空，避免沿用上次筛选导致漏数据
-            await self._clear_date_filter()
-            # 改价/改库存只对「已刊登」有意义：未刊登的数据表同步不到 eBay，
-            # 传上去只会让上传数和同步数对不上。
-            if only_listed:
-                await self._select_status_listed()
-            else:
-                # 不限状态时必须把档位清回空（=全部）：页面 select 会沿用上次的值，
-                # 不清的话 include_unlisted=true 实际仍按「已刊登」过滤。
-                await self._select_status_all()
-            await self._select_scope_whole_result()
-            await (await self._locate("search_button")).click()
-            await page.wait_for_load_state("domcontentloaded")
-            await asyncio.sleep(self.settings.soldeazy_min_delay)
-
             try:
-                table = await self._locate("result_table")
-            except EbayMcpError:
-                # 没有结果表 = 这次搜索 0 条，不是错误。
-                # 典型场景：只查「已刊登」但该账号全是未刊登。
-                return {
-                    "site": site,
-                    "shop": shop,
-                    "search": sku_terms,
-                    "status_filter": self._last_status
-                    or ("已刊登" if only_listed else "不限"),
-                    "columns": [],
-                    "row_count": 0,
-                    "rows": [],
-                    **_shop_scope_hint(shop),
-                    "empty_reason": (
-                        "没有匹配的数据表"
-                        + ("（当前只查已刊登，可能被状态过滤掉了）" if only_listed else "")
-                    ),
-                }
+                return await self._search_via_http(sku_terms, site, shop, only_listed)
+            except EbayMcpError as exc:
+                if exc.code == "SOLDEAZY_LOGIN_REQUIRED":
+                    raise
+                logger.warning("HTTP 搜索失败（%s），回退 DOM 通道", exc.code)
+            except Exception as exc:  # noqa: BLE001 - 回退总比整条链路死掉好
+                logger.warning("HTTP 搜索异常（%s），回退 DOM 通道", type(exc).__name__)
+            return await self._search_via_page(sku_terms, site, shop, only_listed)
 
-            # 搜索提交会把每页条数重置回 25，所以要在搜索**之后**调大页；
-            # 调档是 AJAX 重拉，会保留本次搜索条件（实测 308 笔不变）。
-            # 注意（2026-11-11 实机）：调档的 AJAX 重拉会换掉导出按钮的点击绑定，
-            # 之后再点「导出」弹层不再出现。所以 search 里**只读不改**，
-            # 真正需要大页的勾选动作在 select_datasheets 里自己调档。
-            page_limit = await self._read_page_limit()
-            table = await self._locate("result_table")
-            trs = table.locator("tr")
-            total = await trs.count()
-            cell_rows: list[list[str]] = []
-            for index in range(total):
-                cells = await trs.nth(index).locator("th,td").all_inner_texts()
-                cell_rows.append(cells)  # 原样交给 parse_rows：换行是变体分隔符
-            header, records = parse_rows(cell_rows)
+    async def _search_via_http(
+        self, sku_terms: str, site: str, shop: str, only_listed: bool, *, limit: int = 200
+    ) -> dict[str, Any]:
+        """和浏览器做的一模一样：GET 列表页拿表单当前状态 → 改筛选 → POST。
+
+        比 DOM 通道还多两个好处：结果表是服务端渲染的完整 200 行/页
+        （DOM 通道受虚拟化影响只能读到约 65 行），以及顺带拿到
+        ``sql_cache_token`` 供同步接口使用。
+        """
+
+        shop_id = ""
+        if shop:
+            known = {o["name"]: o["id"] for o in await self.list_shop_options()}
+            shop_id = known.get(shop, "")
+            if not shop_id:
+                upper = shop.upper()
+                for name, oid in known.items():
+                    if upper in name.upper():
+                        shop_id = oid
+                        break
+
+        status_value = "All" if only_listed else ""
+        self._last_status = "已刊登(所有)" if only_listed else "(空=全部)"
+        self._last_status_value = status_value
+        self._last_date = "(空)"
+        self._last_date_value = ""
+
+        async with self._http_client() as client:
+            got = await client.get(f"{self.base_url}{LIST_PATH}")
+            if not looks_logged_in(got.text):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 缺失或已失效：先调 soldeazy_open_login 登录一次。",
+                    details={"session_file": str(self._session_file())},
+                )
+            state = parse_form_state(got.text)
+            overrides = {
+                "txtproductcode": sku_terms or "",
+                "listshop[]": shop_id,
+                "listsite": SITE_CODES.get((site or "").strip().upper(), "") if site else "",
+                "listactive": status_value,
+                "listdate": "",
+                "page": "1",
+                "limit": str(max(1, min(int(limit), 200))),
+            }
+            pairs: list[tuple[str, str]] = [
+                (name, value)
+                for name, values in state.items()
+                if name not in overrides
+                for value in values
+            ]
+            pairs.extend(overrides.items())
+            pairs.append(("table_action", "show"))
+            pairs.append(("mode", "dsheet_list"))
+
+            html = ""
+            for url in (
+                f"{self.base_url}/app/soldeazy/datasheet",
+                f"{self.base_url}/app/soldeazy/datasheet/dsheet_list",
+            ):
+                # 重名字段（listshop[] / view_profile[] / search_filters[]）必须保留多值，
+                # 而 httpx 的 AsyncClient 对 data=list 会生成同步流直接报错，
+                # 所以自己 urlencode 成 content 发。
+                posted = await client.post(
+                    url,
+                    content=urlencode(pairs).encode("utf-8"),
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+                # 只有真的 <table id=tbl_dSheet> 才算搜到了；CSS 里也出现过
+                # 这个 id（选择器文本），不能用子串判断。
+                if posted.status_code == 200 and re.search(
+                    r"<table\b[^>]*id=[\"']tbl_dSheet[\"']", posted.text, re.I
+                ):
+                    html = posted.text
+                    break
+            if not html:
+                raise EbayMcpError(
+                    "SOLDEAZY_HTTP_SEARCH_FAILED",
+                    "HTTP 搜索两个候选地址都没拿回结果表，回退 DOM 通道。",
+                )
+
+        self._last_sql_token = extract_sql_token(html)
+        matrix = parse_result_table(html)
+        if not matrix:
             return {
                 "site": site,
                 "shop": shop,
                 "search": sku_terms,
-                "status_filter": self._last_status or ("已刊登" if only_listed else "不限"),
-                "date_filter": self._last_date or "(空)",
-                "columns": header,
-                "row_count": len(records),
-                "rows": records,
-                "page_limit": page_limit,
-                "total_records": await self._read_total_records(),
-                **_shop_scope_hint(shop, records),
+                "status_filter": self._last_status,
+                "columns": [],
+                "row_count": 0,
+                "rows": [],
+                "page_limit": int(overrides["limit"]),
+                "total_records": extract_total_records(html),
+                **_shop_scope_hint(shop),
+                "empty_reason": (
+                    "没有匹配的数据表"
+                    + ("（当前只查已刊登，可能被状态过滤掉了）" if only_listed else "")
+                ),
             }
+        header, records = parse_rows(matrix)
+        return {
+            "site": site,
+            "shop": shop,
+            "search": sku_terms,
+            "status_filter": self._last_status,
+            "date_filter": self._last_date,
+            "columns": header,
+            "row_count": len(records),
+            "rows": records,
+            "page_limit": int(overrides["limit"]),
+            "total_records": extract_total_records(html),
+            **_shop_scope_hint(shop, records),
+        }
+
+    async def _search_via_page(
+        self, sku_terms: str, site: str, shop: str, only_listed: bool
+    ) -> dict[str, Any]:
+        """DOM 通道（回退用）：调用方已持有 ``self._lock``。"""
+
+        page = await self._ensure_page()
+        await self._goto(f"{self.base_url}{LIST_PATH}")
+        await self._dismiss_popup()
+
+        await (await self._locate("search_sku")).fill(sku_terms)
+        if site:
+            await self._select_site(site)
+        if shop:
+            await self._select_shop(shop)
+        # 修改日期默认留空，避免沿用上次筛选导致漏数据
+        await self._clear_date_filter()
+        # 改价/改库存只对「已刊登」有意义：未刊登的数据表同步不到 eBay，
+        # 传上去只会让上传数和同步数对不上。
+        if only_listed:
+            await self._select_status_listed()
+        else:
+            # 不限状态时必须把档位清回空（=全部）：页面 select 会沿用上次的值，
+            # 不清的话 include_unlisted=true 实际仍按「已刊登」过滤。
+            await self._select_status_all()
+        await self._select_scope_whole_result()
+        await (await self._locate("search_button")).click()
+        await page.wait_for_load_state("domcontentloaded")
+        await asyncio.sleep(self.settings.soldeazy_min_delay)
+
+        try:
+            table = await self._locate("result_table")
+        except EbayMcpError:
+            # 没有结果表 = 这次搜索 0 条，不是错误。
+            # 典型场景：只查「已刊登」但该账号全是未刊登。
+            return {
+                "site": site,
+                "shop": shop,
+                "search": sku_terms,
+                "status_filter": self._last_status
+                or ("已刊登" if only_listed else "不限"),
+                "columns": [],
+                "row_count": 0,
+                "rows": [],
+                **_shop_scope_hint(shop),
+                "empty_reason": (
+                    "没有匹配的数据表"
+                    + ("（当前只查已刊登，可能被状态过滤掉了）" if only_listed else "")
+                ),
+            }
+
+        # 搜索提交会把每页条数重置回 25，所以要在搜索**之后**调大页；
+        # 调档是 AJAX 重拉，会保留本次搜索条件（实测 308 笔不变）。
+        # 注意（2026-11-11 实机）：调档的 AJAX 重拉会换掉导出按钮的点击绑定，
+        # 之后再点「导出」弹层不再出现。所以 search 里**只读不改**，
+        # 真正需要大页的勾选动作在 select_datasheets 里自己调档。
+        page_limit = await self._read_page_limit()
+        table = await self._locate("result_table")
+        trs = table.locator("tr")
+        total = await trs.count()
+        cell_rows: list[list[str]] = []
+        for index in range(total):
+            cells = await trs.nth(index).locator("th,td").all_inner_texts()
+            cell_rows.append(cells)  # 原样交给 parse_rows：换行是变体分隔符
+        header, records = parse_rows(cell_rows)
+        self._last_sql_token = await self._eval_with_retry(
+            page,
+            "() => ((document.querySelector('input[name=sql_cache_token]')||{}).value || '')",
+        )
+        return {
+            "site": site,
+            "shop": shop,
+            "search": sku_terms,
+            "status_filter": self._last_status or ("已刊登" if only_listed else "不限"),
+            "date_filter": self._last_date or "(空)",
+            "columns": header,
+            "row_count": len(records),
+            "rows": records,
+            "page_limit": page_limit,
+            "total_records": await self._read_total_records(),
+            **_shop_scope_hint(shop, records),
+        }
 
     async def _ensure_rows_selected(self) -> int:
         """导出弹层只在「有勾选」时出现，所以导出前先全选当前结果。"""
@@ -863,6 +1174,18 @@ class SoldeazyBrowser:
 
         这是站点给当前登录账号授权的门店清单，比 /ebayac 页面更可靠。
         """
+
+        if self._context is None:
+            # 免浏览器：渠道账号列表就在列表页 HTML 里，不必为它抢 profile 锁
+            async with self._http_client() as client:
+                got = await client.get(f"{self.base_url}{LIST_PATH}")
+            if not looks_logged_in(got.text):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 缺失或已失效：先调 soldeazy_open_login 登录一次。",
+                    details={"session_file": str(self._session_file())},
+                )
+            return parse_shop_options(got.text)
 
         page = await self._ensure_page()
         if not (page.url or "").startswith(self.base_url):
@@ -1431,55 +1754,82 @@ class SoldeazyBrowser:
         页面上读到的勾选集合不完整，接口参数必须按计划的完整清单给。
         """
 
-        page = await self._ensure_page()
-        token = await self._eval_with_retry(
-            page,
-            "() => ((document.querySelector('input[name=sql_cache_token]')||{}).value || '')",
-        )
         if row_ids:
             row_ids = [str(item).strip() for item in row_ids if str(item).strip()]
-        else:
-            row_ids = await self._eval_with_retry(page, """
-            () => {
-              const out = [];
-              Array.from(document.querySelectorAll('#tbl_dSheet tr')).forEach(r => {
-                const box = r.querySelector('input[type=checkbox]');
-                if (!box || !box.checked) return;
-                const cells = Array.from(r.cells).map(c => (c.innerText || '').trim());
-                const hit = cells.find(t => /^[0-9]{6,}$/.test(t));
-                if (hit) out.push(hit);
-              });
-              return out;
-            }
-            """)
-        if not row_ids:
-            raise EbayMcpError("SOLDEAZY_NO_SELECTION", "没有勾选任何数据表，无法同步。")
 
-        form = {
+        form_head = {
             "mode": "bulk_dalign",
             "second_mode": "dsheet_list",
             "table_action": "show",
             "bulk_option": "selected_items",
-            "table_row_ids": ",".join(row_ids),
             "dalign_price": "1" if price_postage else "0",
             "dalign_imghttps": "1",
             "dalign_option": "2",
-            "sql_cache_token": token,
         }
         if quantity:
-            form["dalign_qty"] = "1"
+            form_head["dalign_qty"] = "1"
+        url = f"{self.base_url}/app/soldeazy/datasheet"
 
-        response = await page.context.request.post(
-            f"{self.base_url}/app/soldeazy/datasheet", form=form, timeout=120_000
-        )
-        text = (await response.text()) or ""
+        if self._context is not None:
+            page = await self._ensure_page()
+            token = await self._eval_with_retry(
+                page,
+                "() => ((document.querySelector('input[name=sql_cache_token]')||{}).value || '')",
+            )
+            if not row_ids:
+                row_ids = await self._eval_with_retry(page, """
+                () => {
+                  const out = [];
+                  Array.from(document.querySelectorAll('#tbl_dSheet tr')).forEach(r => {
+                    const box = r.querySelector('input[type=checkbox]');
+                    if (!box || !box.checked) return;
+                    const cells = Array.from(r.cells).map(c => (c.innerText || '').trim());
+                    const hit = cells.find(t => /^[0-9]{6,}$/.test(t));
+                    if (hit) out.push(hit);
+                  });
+                  return out;
+                }
+                """)
+            if not row_ids:
+                raise EbayMcpError("SOLDEAZY_NO_SELECTION", "没有勾选任何数据表，无法同步。")
+            response = await page.context.request.post(
+                url,
+                form={**form_head, "table_row_ids": ",".join(row_ids), "sql_cache_token": token},
+                timeout=120_000,
+            )
+            text = (await response.text()) or ""
+            status = response.status
+        else:
+            # 免浏览器：令牌用最近一次 HTTP 搜索存下的；没有就先搜索
+            token = self._last_sql_token
+            if not token:
+                raise EbayMcpError(
+                    "SOLDEAZY_TOKEN_MISSING",
+                    "没有可用的同步令牌：先跑一次 search（HTTP 通道会顺带取令牌）。",
+                )
+            if not row_ids:
+                raise EbayMcpError(
+                    "SOLDEAZY_NO_SELECTION", "没有勾选行也没传显式清单，无法同步。"
+                )
+            async with self._http_client() as client:
+                posted = await client.post(
+                    url,
+                    data={
+                        **form_head,
+                        "table_row_ids": ",".join(row_ids),
+                        "sql_cache_token": token,
+                    },
+                )
+            text = posted.text or ""
+            status = posted.status_code
+
         hints = []
         for marker in ("没有在线刊登", "New D-Align", "同步成功", "已加入", "失败"):
             if marker in text:
                 hints.append(marker)
         return {
-            "success": response.status == 200,
-            "status": response.status,
+            "success": status == 200,
+            "status": status,
             "rows": len(row_ids),
             "table_row_ids": row_ids,
             "hints": hints,
@@ -1854,15 +2204,17 @@ class SoldeazyBrowser:
     async def queue_jobs(self, *, limit: int = 20) -> list[dict[str, Any]]:
         """读工序管理任务列表（``queue-job/ajax/get-queue-jobs``）。"""
 
-        page = await self._ensure_page()
-        await self._goto(f"{self.base_url}/app/soldeazy/queue-job")
-        await asyncio.sleep(1.5)
-        response = await page.context.request.post(
-            f"{self.base_url}/app/soldeazy/queue-job/ajax/get-queue-jobs",
-            form={},
-            timeout=60_000,
-        )
-        text = (await response.text()).lstrip("\ufeff").strip()
+        url = f"{self.base_url}/app/soldeazy/queue-job/ajax/get-queue-jobs"
+        if self._context is not None:
+            page = await self._ensure_page()
+            await self._goto(f"{self.base_url}/app/soldeazy/queue-job")
+            await asyncio.sleep(1.5)
+            response = await page.context.request.post(url, form={}, timeout=60_000)
+            text = (await response.text()).lstrip("\ufeff").strip()
+        else:
+            async with self._http_client() as client:
+                posted = await client.post(url, data={})
+            text = posted.text.lstrip("\ufeff").strip()
         try:
             payload = json.loads(text)
         except ValueError as exc:
@@ -1877,13 +2229,17 @@ class SoldeazyBrowser:
     async def queue_result(self, job_id: str) -> dict[str, Any]:
         """读某个任务的逐行处理结果（``queue/result?job_id=…``，返回 HTML）。"""
 
-        page = await self._ensure_page()
-        response = await page.context.request.post(
-            f"{self.base_url}/app/soldeazy/queue/result",
-            params={"job_id": str(job_id)},
-            timeout=60_000,
-        )
-        html = await response.text()
+        url = f"{self.base_url}/app/soldeazy/queue/result"
+        if self._context is not None:
+            page = await self._ensure_page()
+            response = await page.context.request.post(
+                url, params={"job_id": str(job_id)}, timeout=60_000
+            )
+            html = await response.text()
+        else:
+            async with self._http_client() as client:
+                posted = await client.post(url, params={"job_id": str(job_id)})
+            html = posted.text
 
         def pick(pattern: str) -> str:
             match = re.search(pattern, html, re.S)
@@ -2020,28 +2376,30 @@ class SoldeazyBrowser:
         与点页面等价，但省掉 UI 等待，返回服务端的 `handle` 便于后续追踪。
         """
 
-        page = await self._ensure_page()
         payload = path.read_bytes()
-        response = await page.context.request.post(
-            f"{self.base_url}{UPLOAD_PATH}/upload",
-            multipart={
-                "filePackage": {
-                    "name": path.name,
-                    "mimeType": (
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    ),
-                    "buffer": payload,
-                }
-            },
-            timeout=120_000,
-        )
-        if response.status != 200:
-            raise EbayMcpError(
-                "SOLDEAZY_UPLOAD_FAILED",
-                f"上传接口返回 HTTP {response.status}",
+        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        url = f"{self.base_url}{UPLOAD_PATH}/upload"
+        if self._context is not None:
+            page = await self._ensure_page()
+            response = await page.context.request.post(
+                url,
+                multipart={
+                    "filePackage": {"name": path.name, "mimeType": mime, "buffer": payload}
+                },
+                timeout=120_000,
             )
-        # 服务端会带 UTF-8 BOM，直接 response.json() 会炸
-        text = (await response.text()).lstrip("\ufeff").strip()
+            status = response.status
+            text = (await response.text()).lstrip("\ufeff").strip()
+        else:
+            # 免浏览器：multipart 直接发，cookie 来自落盘文件
+            async with self._http_client() as client:
+                posted = await client.post(
+                    url, files={"filePackage": (path.name, payload, mime)}
+                )
+            status = posted.status_code
+            text = posted.text.lstrip("\ufeff").strip()
+        if status != 200:
+            raise EbayMcpError("SOLDEAZY_UPLOAD_FAILED", f"上传接口返回 HTTP {status}")
         body = json.loads(text) if text else {}
         handle = (body.get("handle") or {}) if isinstance(body, dict) else {}
         return {

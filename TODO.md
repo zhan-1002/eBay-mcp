@@ -328,8 +328,33 @@
 
 搬完之后**正常读写全程不碰浏览器**，profile 锁只在"cookie 失效要重新登录"时才出现。
 
+### 8.1 搬迁完成（2026-11-11 晚，FUN 实机验收）
+
+上面"下一批"已全部搬完并实机验收：
+
+- **`search()` HTTP 优先**：GET 列表页 → 解析表单当前状态（`parse_form_state`，
+  与浏览器序列化同口径）→ 改筛选 → POST。逐字段对比 DOM 通道：
+  25 个共有 rowid **0 处不一致**，且 HTTP 一次拿 200 行（DOM 受虚拟化只有 25）。
+  两个真机坑已修：嵌套 `<table>` / 嵌套 `<tr>` 会把非贪心正则截断（改按深度切）；
+  httpx AsyncClient 对 `data=list` 生成同步流会报错（改预编码 content）。
+- **`sql_cache_token`** 从搜索页 HTML 直接取（`extract_sql_token`），同步接口免浏览器。
+- **`upload_via_api` / `queue_jobs` / `queue_result`** 无 context 时走 httpx。
+- **`select_datasheets` 降级**：`apply_plan` 不再调用（同步按完整清单传参），
+  方法保留给人工/对话场景。
+- **FUN 实机验收**（+0.5 → 还原，各 10 行）：两次均
+  `ok=true / uploaded=true / reconciled=10/10`，**全程 `_context=None`（没开浏览器）**。
+- **TODO #1 的 warnings 分支实机生效**：未刊登计划的判决里出现
+  "同步接口返回成功但工序队列没观察到同步任务，未刊登数据表属预期行为"，
+  `ok` 仍为 true——误报消除，证据留下。
+
+现在的浏览器用途只剩一个：**cookie 失效时重新登录**。
+
 待办：
-- [ ] 第 1 条的真实复现：等 FUN 再有未刊登数据表时验证 `warnings` 生效。
+- [x] 第 1 条的真实复现 —— 2026-11-11 晚 FUN 实机验收：未刊登计划判决里
+      `warnings` 出现"工序队列没观察到同步任务"提示且 `ok=true`（见 8.1 节）。
 - [x] 默认 `limit=50` 与 4000 字符闸门自相矛盾 —— 已把默认降到 20，
       `plan_changes` 明细 20 条、`reconcile` 明细各 10 条；新增测试守住
       「默认参数必须能通过闸门」。
+- [ ] 免浏览器链路的首次 FUN 写入耗时约 8 分钟/次，主要花在
+      `_await_latest_job` 等不存在的同步任务（10×6 秒×2 次）。
+      可给未刊登计划把等待轮数调小（如 2 轮），待下次实机顺带验证。

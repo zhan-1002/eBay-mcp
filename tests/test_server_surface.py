@@ -583,13 +583,16 @@ def test_search_returns_page_limit_and_total_records():
 
     from ebay_mcp_server.providers import soldeazy as mod
 
-    src = inspect.getsource(mod.SoldeazyBrowser.search)
+    src = inspect.getsource(mod.SoldeazyBrowser._search_via_page)
+    http_src = inspect.getsource(mod.SoldeazyBrowser._search_via_http)
     assert "page_limit" in src
     assert "total_records" in src
     # search 只读档位不改档：改档会把导出按钮的点击绑定弄坏（2026-11-11 实机）
     assert "_read_page_limit" in src
     select_src = inspect.getsource(mod.SoldeazyBrowser.select_datasheets)
     assert "_select_page_limit" in select_src
+    # HTTP 通道直接带 limit 参数，不受页面虚拟化限制
+    assert "limit" in http_src
 
 
 def test_select_datasheets_walks_pages_and_reports_missing():

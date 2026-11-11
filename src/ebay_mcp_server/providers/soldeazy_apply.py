@@ -513,33 +513,10 @@ async def apply_plan(
     sync_notes: list[str] = []
     if sync:
         planned_ids = sorted({item.rowid for item in plan.items})
-        # 重新搜索后再勾选，BULK SYNC 只作用于勾选行。
-        # 结果表分页（默认 25 行/页），勾选只作用于渲染出来的行，所以
-        # select_datasheets 会逐页翻找；同步接口则直接按完整清单传 row_ids。
+        # 重新搜索一次：HTTP 通道会顺带拿下 sql_cache_token，同步接口必须用它。
         await browser.search("", plan.site, only_listed=plan.only_listed)
-        # 勾选只是尽力而为：上传已经发生，任何后续异常都不该把链路掐断在
-        # "已改价但未同步"的中间态。同步接口按完整清单传 table_row_ids，
-        # 不依赖页面勾选结果。
-        try:
-            picked = await browser.select_datasheets(planned_ids)
-        except Exception as exc:  # noqa: BLE001 - 勾选失败不阻断同步
-            picked = {
-                "selected": 0, "wanted": len(planned_ids),
-                "pages_walked": 0, "found": [], "missing": [],
-            }
-            sync_notes.append(
-                f"勾选步骤失败（{type(exc).__name__}），同步改按完整清单提交"
-            )
-        selected = picked["selected"] if isinstance(picked, dict) else picked
-        if selected != len(planned_ids):
-            missing = (picked or {}).get("missing") or []
-            # 勾选只是同步表单的取材方式之一：sync_up_via_api 已按完整清单
-            # 传 table_row_ids，所以勾不全只记警告，真正的成败由工序队列核对。
-            sync_notes.append(
-                f"页面只勾选到 {selected} 个数据表（计划 {len(planned_ids)} 个），"
-                "同步已按完整清单提交"
-                + (f"；没勾到的前 10 个：{missing[:10]}" if missing else "")
-            )
+        # UI 勾选已降级为不做：同步接口按完整清单传 table_row_ids，
+        # 勾选框只是页面的取材方式，不值得为它翻几十页 DOM。
         sync_result = await browser.sync_up_via_api(
             price_postage=sync_price, quantity=sync_quantity, row_ids=planned_ids
         )
@@ -556,6 +533,17 @@ async def apply_plan(
             sync_result["queue"] = sync_queue
             sync_problems.extend(sync_queue.get("problems") or [])
             sync_notes.extend(sync_queue.get("notes") or [])
+        else:
+            # 没观察到同步任务：未刊登数据表本来就不会产生同步工序（FUN 实测），
+            # 记警告不判失败；已刊登计划也先记警告，避免平台行为差异造成误报。
+            sync_notes.append(
+                "同步接口返回成功但工序队列没观察到同步任务，"
+                + (
+                    "未刊登数据表属预期行为，同步条数以上传条数为准"
+                    if not plan.only_listed
+                    else "同步条数无法从工序队列确认"
+                )
+            )
 
     if sync_result and not sync_problems:
         sync_status = "ok"

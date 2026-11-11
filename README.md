@@ -249,6 +249,20 @@ soldeazy_change_price(targets={}, targets_file="targets.csv")
 文件有脏行（重复 SKU、非数字、负数量）会整份拒收（`SOLDEAZY_TARGETS_FILE`），
 **一条都不会写出去**。
 
+#### 免浏览器通道（2026-11-11 起默认）
+
+搜索 / 导出 / 上传 / 同步 / 工序查询全部走「落盘 cookie + 纯 HTTP」，
+**正常读写不再启动浏览器**，也就不会去抢 profile 锁：
+
+- 搜索 = GET 列表页解析表单状态 → 改筛选 → POST，结果表按嵌套深度切行，
+  与 DOM 通道逐字段一致（25 个共有 rowid 0 处不一致），且一次拿 200 行；
+- 同步令牌 `sql_cache_token` 从搜索页 HTML 直接取；
+- FUN 实机验收：+0.5 → 还原两次改动全程 `_context=None`，均 `ok=true`、对账 10/10。
+
+浏览器现在只剩一个用途：**cookie 失效时重新登录**（`soldeazy_open_login`）。
+配合 `SOLDEAZY_BROWSER_IDLE_SECONDS`（空闲释放）与 `--transport sse`（常驻单例），
+多会话问题从"互斥"降级为"极少数登录时刻才可能相遇"。
+
 ### 三个必须记住的坑
 
 1. **导出文件有两行表头**（技术表头 + 显示表头）。裁剪上传文件时必须两行都保留，

@@ -303,6 +303,147 @@ def test_export_without_browser_and_without_cookies_fails_loudly(tmp_path) -> No
     assert caught.value.code == "SOLDEAZY_LOGIN_REQUIRED"
 
 
+def test_parse_form_state_reads_selected_and_checked_only() -> None:
+    """和浏览器序列化口径一致：checkbox/radio 只取 checked，select 取 selected。"""
+
+    from ebay_mcp_server.providers.soldeazy import parse_form_state
+
+    html = """
+    <form action="show">
+      <input type="hidden" name="page" value="1">
+      <input type="text" name="txtproductcode" value="abc">
+      <input type="checkbox" name="keep" checked value="yes">
+      <input type="checkbox" name="drop" value="no">
+      <select name="listactive"><option value=""> </option>
+        <option value="All" selected>已刊登(所有)</option></select>
+      <select name="multi"><option value="a" selected>A</option>
+        <option value="b" selected>B</option><option value="c">C</option></select>
+      <select name="nosel"><option value="x">X</option><option value="y">Y</option></select>
+      <input type="button" name="btn_search" value="搜索">
+    </form>
+    """
+    state = parse_form_state(html)
+    assert state["page"] == ["1"]
+    assert state["txtproductcode"] == ["abc"]
+    assert state["keep"] == ["yes"]
+    assert "drop" not in state
+    assert state["listactive"] == ["All"]
+    assert state["multi"] == ["a", "b"]
+    assert state["nosel"] == ["x"]          # 没 selected 就取第一项（浏览器行为）
+    assert state["btn_search"] == ["搜索"]  # 搜索按钮可能是服务端分支依据，保留
+
+
+def test_parse_result_table_keeps_br_as_variant_separator() -> None:
+    from ebay_mcp_server.providers.soldeazy import parse_result_table
+
+    html = """
+    <table id='tbl_dSheet'><tr><th>Row ID</th><th>SKU</th></tr>
+    <tr><td>4512957</td><td>JJPC0029<br>JJPC0029US</td></tr></table>
+    """
+    matrix = parse_result_table(html)
+    assert matrix[0] == ["Row ID", "SKU"]
+    assert matrix[1][1] == "JJPC0029\nJJPC0029US"
+
+
+def test_extract_total_and_token_accept_both_quote_styles() -> None:
+    from ebay_mcp_server.providers.soldeazy import (
+        extract_sql_token,
+        extract_total_records,
+    )
+
+    assert extract_total_records("<a>1,636 笔记录</a>") == 1636
+    assert extract_total_records("nothing") == 0
+    html = "<input type=hidden name='sql_cache_token' id='sql_cache_token' value='tok/123'>"
+    assert extract_sql_token(html) == "tok/123"
+    html2 = '<input name="sql_cache_token" value="tok/456">'
+    assert extract_sql_token(html2) == "tok/456"
+    assert extract_sql_token("<html></html>") == ""
+
+
+def test_parse_shop_options_reads_id_and_name() -> None:
+    from ebay_mcp_server.providers.soldeazy import parse_shop_options
+
+    html = """
+    <select name='listshop[]'><option value=''> </option>
+    <option value='159'>FUN</option><option value='4432'>LT</option></select>
+    """
+    options = parse_shop_options(html)
+    assert options == [{"id": "159", "name": "FUN"}, {"id": "4432", "name": "LT"}]
+
+
+def test_search_via_http_builds_the_same_filters_as_the_page(tmp_path, monkeypatch) -> None:
+    """HTTP 通道必须和 DOM 通道同一口径：日期留空、状态按 only_listed、店铺按 id。"""
+
+    import asyncio
+    from dataclasses import replace
+
+    import httpx
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    page_html = """
+    <table id="tbl_dSheet"></table>
+    <form action="show">
+      <input type="text" name="txtproductcode" value="">
+      <select name='listshop[]'><option value='159' selected>FUN</option></select>
+      <select name="listsite"><option value="" selected> </option></select>
+      <select name="listactive"><option value="" selected> </option>
+        <option value="All">已刊登(所有)</option></select>
+      <select name="listdate"><option value="" selected> </option>
+        <option value="month">month</option></select>
+      <input type="hidden" name="page" value="1">
+      <input type="hidden" name="limit" value="25">
+      <input type="button" name="btn_search" value="搜索">
+    </form>
+    """
+    result_html = """
+    <input type=hidden name='sql_cache_token' value='tok/9'>
+    <a>42 笔记录</a>
+    <table id="tbl_dSheet"><tr><th>dsheet_row_id</th><th>dsheet_shop_initial</th>
+    <th>dsheet_var_parent_sku</th><th>dsheet_product_code</th><th>dsheet_qty</th>
+    <th>dsheet_price</th></tr>
+    <tr><th>Row ID</th><th>Sales channel</th><th>P.SKU</th>
+    <th>SKU</th><th>Qty</th><th>Price</th></tr>
+    <tr><td></td><td>4512957</td><td>x</td><td>FUN</td><td>US</td><td>Title</td>
+    <td>a</td><td>JJPC0029</td><td>21.9</td><td>0.00</td><td></td><td></td></tr>
+    </table>
+    """
+    seen: dict[str, object] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, text=page_html)
+        import urllib.parse
+
+        seen["url"] = str(request.url)
+        seen["pairs"] = urllib.parse.parse_qsl(
+            (await request.aread()).decode(), keep_blank_values=True
+        )
+        return httpx.Response(200, text=result_html)
+
+    browser = SoldeazyBrowser(replace(Settings.load(), soldeazy_profile_dir=str(tmp_path)))
+    browser.active_shop = {"id": "159", "name": "FUN"}
+    monkeypatch.setattr(
+        browser, "_http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    )
+
+    found = asyncio.run(browser._search_via_http("", "US", "FUN", only_listed=False))
+
+    pairs = dict(seen["pairs"])
+    assert pairs["listactive"] == ""            # include_unlisted → 全部
+    assert pairs["listdate"] == ""              # 日期留空
+    assert pairs["listshop[]"] == "159"         # 店铺按 id
+    assert pairs["limit"] == "200"
+    assert found["row_count"] == 1
+    assert found["total_records"] == 42
+    assert browser._last_sql_token == "tok/9"
+
+    listed = asyncio.run(browser._search_via_http("", "US", "FUN", only_listed=True))
+    assert dict(seen["pairs"])["listactive"] == "All"
+    assert listed["row_count"] == 1
+
+
 def test_idle_release_closes_browser_after_idle() -> None:
     """空闲到点就关浏览器、交还 profile 锁；cookie 由 close() 落盘。"""
 
@@ -458,6 +599,6 @@ def test_search_clears_date_filter_and_defaults_to_listed():
     assert hasattr(SoldeazyBrowser, "_clear_date_filter")
     assert hasattr(SoldeazyBrowser, "_select_status_listed")
 
-    source = inspect.getsource(SoldeazyBrowser.search)
+    source = inspect.getsource(SoldeazyBrowser._search_via_page)
     assert "_clear_date_filter" in source
     assert "_select_scope_whole_result" in source
