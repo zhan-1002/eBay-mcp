@@ -7,7 +7,7 @@ import json
 import logging
 import sys
 # import tempfile  # 仅旧的 _collect_site_rows 用到，随该函数一起停用
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -134,6 +134,60 @@ def _register_skill_resources() -> None:
 
 
 _register_skill_resources()
+
+
+#: 工具面按前缀分组。整份工具 schema 每个请求都要随上下文发一次，30 个工具
+#: 约 7.5k token；只做 Soldeazy 的时候没必要把 14 个官方 eBay 工具也挂上去。
+TOOLSET_PREFIXES: dict[str, tuple[str, ...]] = {
+    "all": (),
+    "soldeazy": ("soldeazy_",),
+    "official": ("ebay_",),
+}
+
+
+def toolset_prefixes(toolset: str) -> tuple[str, ...]:
+    """把 ``MCP_TOOLSET`` 解析成前缀元组；写错就报错，不静默退回全部。"""
+
+    value = (toolset or "all").strip().lower()
+    if value not in TOOLSET_PREFIXES:
+        raise ValueError(
+            f"MCP_TOOLSET 只能是 {' / '.join(TOOLSET_PREFIXES)}，收到 {toolset!r}"
+        )
+    return TOOLSET_PREFIXES[value]
+
+
+def select_tool_names(names: Iterable[str], toolset: str) -> list[str]:
+    """返回该工具集下应当暴露的工具名。"""
+
+    prefixes = toolset_prefixes(toolset)
+    if not prefixes:
+        return list(names)
+    return [name for name in names if name.startswith(prefixes)]
+
+
+def apply_toolset(toolset: str) -> list[str]:
+    """按工具集移除不需要的工具，返回实际暴露的工具名。"""
+
+    keep = set(select_tool_names(mcp._tool_manager._tools, toolset))
+    for name in list(mcp._tool_manager._tools):
+        if name not in keep:
+            mcp.remove_tool(name)
+    return sorted(keep)
+
+
+def disable_output_schema() -> None:
+    """关掉自动生成的 ``outputSchema``。
+
+    FastMCP 会为每个返回 dict 的工具生成一份 outputSchema，内容只是
+    ``{"additionalProperties": true, "type": "object"}``——零信息，但每个请求
+    都随工具清单发一遍。关掉后调用方拿到的仍是同一份 JSON 文本，
+    只是不再有 ``structuredContent``。
+    """
+
+    for tool in mcp._tool_manager._tools.values():
+        tool.fn_metadata.output_schema = None
+        # output_schema 是 cached_property，读过一次就缓存进实例字典，必须清掉
+        tool.__dict__.pop("output_schema", None)
 
 
 async def _official_result(
@@ -440,12 +494,17 @@ async def ebay_validate_titles(
     expected_count: int = 30,
     max_length: int = 80,
     recommended_min_length: int = 70,
+    include_titles: bool = True,
 ) -> dict[str, Any]:
     """Mechanically validate English eBay title candidates.
 
     Checks exact count, length, punctuation, repeated words, duplicate titles
     and caller-supplied forbidden brands or model identifiers. It does not make
     semantic brand or factual-product judgments.
+
+    ``include_titles=False`` 时不回显标题文本，只回 index + 校验结果
+    （标题顺序就是入参顺序，调用方自己知道每条是什么）。30 条标题的回显
+    约 8k 字符/次，只要判决时关掉能省一大半。
     """
     result = validate_titles(
         titles,
@@ -454,6 +513,9 @@ async def ebay_validate_titles(
         max_length=max_length,
         recommended_min_length=recommended_min_length,
     )
+    if not include_titles:
+        for row in result.get("titles") or []:
+            row.pop("title", None)
     return success("validate_titles", "local-validator", result)
 
 
@@ -463,6 +525,7 @@ async def ebay_get_sales_history(
     marketplace_id: str = "EBAY_GB",
     limit_per_item: int = 100,
     allow_browser_window: bool = False,
+    max_transactions_per_item: int = 20,
 ) -> dict[str, Any]:
     """Collect purchase-history transaction rows for legacy item IDs.
 
@@ -475,6 +538,10 @@ async def ebay_get_sales_history(
     browser. The window stays minimized. A detected eBay check waits silently
     for a verification component and does not by itself show the window. Set
     ``allow_browser_window`` only after the user agrees.
+
+    返回默认每个 item 只带前 20 条成交（``max_transactions_per_item``，最多 100）：
+    历史里这个工具单次返回 3.3 万字符，是旧版本里单次最贵的调用。
+    ``summary`` / ``coverage`` 始终基于全量行计算，截断只影响明细回传。
     """
     try:
         require_marketplace(marketplace_id)
@@ -484,6 +551,13 @@ async def ebay_get_sales_history(
             limit=max(1, min(int(limit_per_item), 100)),
             allow_window=bool(allow_browser_window),
         )
+        cap = max(1, min(int(max_transactions_per_item), 100))
+        for item in data.get("items") or []:
+            rows = item.get("transactions") or []
+            if len(rows) > cap:
+                item["transactions"] = rows[:cap]
+                item["transactions_total"] = len(rows)
+                item["transactions_truncated"] = True
         return success("get_sales_history", sales_provider.name, data)
     except EbayMcpError as exc:
         return tool_error("get_sales_history", exc)
@@ -536,7 +610,11 @@ async def soldeazy_status() -> dict[str, Any]:
     credentials are configured, and whether the write tools are enabled.
     """
     try:
-        return success("soldeazy_status", "soldeazy", await soldeazy.status())
+        state = await soldeazy.status()
+        # 计划/审计目录由 profile 目录推导（见 _plan_dir），一起回显，
+        # 免得"登录态在这、计划却写到别处"这种数据位置问题靠猜。
+        state["plan_dir"] = str(_plan_dir())
+        return success("soldeazy_status", "soldeazy", state)
     except EbayMcpError as exc:
         return tool_error("soldeazy_status", exc)
 
@@ -556,15 +634,19 @@ async def soldeazy_open_login() -> dict[str, Any]:
 
 
 def _cap_rows(
-    rows: list[dict[str, Any]], *, limit: int = 50, offset: int = 0, with_title: bool = False
+    rows: list[dict[str, Any]], *, limit: int = 20, offset: int = 0, with_title: bool = False
 ) -> dict[str, Any]:
     """把行列表裁成安全的一页。
 
     生产账号一次搜索可能几千行，全量回传会在对话里吃掉几十万 token。
-    这里统一限流：默认 50 条、最多 200 条，标题默认不带。
+    这里统一限流：默认 20 条、最多 200 条，标题默认不带。
+
+    默认值必须让整页落在 ``MAX_OUTPUT_CHARS`` 以内：50 条约 2,099 token、
+    必然被闸门打回，模型就不得不每次补 ``allow_large_output=true``，
+    闸门形同虚设。20 条约 840 token，能正常返回。
     """
 
-    page_size = max(1, min(int(limit or 50), 200))
+    page_size = max(1, min(int(limit or 20), 200))
     start = max(0, int(offset or 0))
     window = rows[start : start + page_size]
     if not with_title:
@@ -618,7 +700,7 @@ async def soldeazy_search_datasheet(
     site: str = "",
     skus: list[str] | None = None,
     search_text: str = "",
-    limit: int = 50,
+    limit: int = 20,
     offset: int = 0,
     with_title: bool = False,
     include_unlisted: bool = False,
@@ -633,7 +715,11 @@ async def soldeazy_search_datasheet(
     ``site`` 可省略：**不传就是全部站点**（Soldeazy 站点下拉「不勾选 = 全部」），
     省掉先反问用户一轮。返回里会带 ``site_notice`` 告知实际范围。
 
-    **返回条数默认上限 50 条**（``limit``，最多 200）。生产账号一次可能几千条，
+    **店铺一定要传 `shop`**：既没传 `shop`、也没有 `switch_shop` 设过当前账号时，
+    平台不会做店铺过滤，返回的是默认店铺的数据。返回里的 ``shop_filter_applied``
+    和 ``shops_in_result`` 会如实告诉你实际是哪个店的。
+
+    **返回条数默认上限 20 条**（``limit``，最多 200）。生产账号一次可能几千条，
     全量返回会在对话里吃掉几十万 token；确实需要全量时用 ``offset`` 翻页。
     ``with_title`` 默认关闭——标题是单行最占字的部分。
     """
@@ -1150,6 +1236,56 @@ async def _resolve_shop_id(shop: str) -> dict[str, str]:
     )
 
 
+def _resolve_targets(
+    targets: dict[str, float] | None, targets_file: str, *, kind: str
+) -> tuple[dict[str, float], dict[str, Any]]:
+    """``targets`` 与 ``targets_file`` 二选一，返回 (目标字典, 回显信息)。
+
+    为什么要文件入口：一次改动常常是成百上千个 SKU，内联字典要模型逐条生成，
+    而且会整段留在上下文里反复重发。给一个路径，调用方只发 20 来个 token。
+    """
+
+    from ebay_mcp_server.providers.soldeazy_change import MAX_PROBLEMS
+    from ebay_mcp_server.providers.soldeazy_targets import read_targets_file
+
+    path = (targets_file or "").strip()
+    inline = dict(targets or {})
+
+    if path and inline:
+        raise EbayMcpError(
+            "SOLDEAZY_TARGETS_AMBIGUOUS",
+            "targets 与 targets_file 只能给一个，否则不知道该信哪份。",
+        )
+    if not path:
+        return inline, {}
+
+    batch = read_targets_file(path, kind=kind)
+    if batch.issues:
+        raise EbayMcpError(
+            "SOLDEAZY_TARGETS_FILE",
+            f"目标文件有 {len(batch.issues)} 条问题，未执行任何改动。",
+            details={
+                "source": batch.source,
+                "issues": batch.issues[:MAX_PROBLEMS],
+                "issues_total": len(batch.issues),
+            },
+        )
+    if not batch.targets:
+        raise EbayMcpError(
+            "SOLDEAZY_PLAN_EMPTY",
+            "目标文件里没有可用行。",
+            details={"source": batch.source},
+        )
+
+    info: dict[str, Any] = {
+        "targets_from": batch.source,
+        "targets_count": len(batch.targets),
+    }
+    if batch.skipped:
+        info["targets_skipped_total"] = len(batch.skipped)
+    return batch.targets, info
+
+
 @mcp.tool(annotations=REMOTE_WRITE)
 async def soldeazy_change_price(
     targets: dict[str, float],
@@ -1160,6 +1296,7 @@ async def soldeazy_change_price(
     verbose: bool = False,
     include_unlisted: bool = False,
     allow_large_output: bool = False,
+    targets_file: str = "",
 ) -> dict[str, Any]:
     """**一步改价**：起草 → 冻结 → 执行 → 对账，只返回判决。
 
@@ -1168,6 +1305,8 @@ async def soldeazy_change_price(
     这里服务端自己校验，只回 `ok` + 计数 + 问题列表（最多 10 条）。
 
     `targets` 是 `{子体SKU: 新价格}`，价格按给定值精确写入。
+    **成百上千条时改用 `targets_file`**：给一个 Excel/CSV 路径（`SKU,价格` 或
+    `SKU=价格` 一行一条），调用方只发路径，几千条不会进对话。给文件时 `targets` 传 `{}`。
     `site` 可省略：**不传就是全部站点**（不勾选站点即全部），一次搜索/导出/上传
     覆盖全部站点；返回里带 `site_notice` 告知范围。这样用户不说明站点时
     不必先反问一轮，省一整次往返的 token。
@@ -1179,15 +1318,17 @@ async def soldeazy_change_price(
         from ebay_mcp_server.providers.soldeazy_apply import apply_plan, build_items, make_plan, reconcile
         from ebay_mcp_server.providers.soldeazy_plan import freeze, load_verified, write_draft
 
-        if not targets:
+        if not targets and not (targets_file or "").strip():
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
         if not dry_run:
             _require_write_enabled()
 
+        resolved, targets_info = _resolve_targets(targets, targets_file, kind="price")
+
         data = await run_change(
             kind="price",
             site=site,
-            targets=targets,
+            targets=resolved,
             shop=shop,
             dry_run=dry_run,
             sync=True,
@@ -1209,6 +1350,7 @@ async def soldeazy_change_price(
             },
         )
         data.update(_site_hint(site))
+        data.update(targets_info)
         blocked = _output_too_large(data, allow=allow_large_output)
         if blocked is not None:
             return blocked
@@ -1232,11 +1374,16 @@ async def soldeazy_change_stock(
     verbose: bool = False,
     include_unlisted: bool = False,
     allow_large_output: bool = False,
+    targets_file: str = "",
 ) -> dict[str, Any]:
     """**一步改库存**：起草 → 冻结 → 执行 → 对账，只返回判决。
 
     `targets` 是 `{母体SKU: 数量}`，会写进该母体下的所有行
     （母体行 + 全部子体行），数量是绝对值。
+
+    **成百上千条时改用 `targets_file`**：直接指向运营填好的
+    `库存更新.xlsx`（表头 `SKU | 库存 | 备注`）或 `SKU,数量` 的 CSV/文本，
+    调用方只发路径，几千条不会进对话。给文件时 `targets` 传 `{}`。
 
     `site` 可省略：**不传就是全部站点**，返回里带 `site_notice` 告知范围。
     """
@@ -1246,15 +1393,17 @@ async def soldeazy_change_stock(
         from ebay_mcp_server.providers.soldeazy_apply import apply_plan, build_items, make_plan, reconcile
         from ebay_mcp_server.providers.soldeazy_plan import freeze, load_verified, write_draft
 
-        if not targets:
+        if not targets and not (targets_file or "").strip():
             raise EbayMcpError("SOLDEAZY_PLAN_EMPTY", "targets 不能为空。")
         if not dry_run:
             _require_write_enabled()
 
+        resolved, targets_info = _resolve_targets(targets, targets_file, kind="qty")
+
         data = await run_change(
             kind="qty",
             site=site,
-            targets=targets,
+            targets=resolved,
             shop=shop,
             dry_run=dry_run,
             sync=True,
@@ -1276,6 +1425,7 @@ async def soldeazy_change_stock(
             },
         )
         data.update(_site_hint(site))
+        data.update(targets_info)
         blocked = _output_too_large(data, allow=allow_large_output)
         if blocked is not None:
             return blocked
@@ -1516,10 +1666,10 @@ async def soldeazy_plan_changes(
             "shop": picked,
             "rows_in_scope": len(live),
             "planned_items": len(items),
-            "items": [item.as_dict() for item in items[:50]],
-            "items_truncated": len(items) > 50,
+            "items": [item.as_dict() for item in items[:20]],
+            "items_truncated": len(items) > 20,
             "items_total": len(items),
-            "missing": report["missing"][:20],
+            "missing": report["missing"][:10],
             "missing_total": len(report["missing"]),
             "conflicts": report["conflicts"],
             "next": (
@@ -1782,6 +1932,11 @@ async def soldeazy_stock_template(out_path: str, skus: list[str]) -> dict[str, A
             "soldeazy_stock_template",
             EbayMcpError("SOLDEAZY_TEMPLATE_ERROR", f"生成库存模板失败: {exc}"),
         )
+
+
+# 所有工具注册完之后才能动工具面：这两个调用必须留在文件末尾。
+disable_output_schema()
+EXPOSED_TOOLS = apply_toolset(settings.mcp_toolset)
 
 
 def main() -> None:

@@ -20,6 +20,22 @@ from ebay_mcp_server.errors import EbayMcpError
 # 单次返回的问题条数上限：出错时也不该把整份清单倒进对话
 MAX_PROBLEMS = 10
 
+# 每个基础 SKU 都可能挂着 x2 / x4 / US 好几个套装，200 个 SKU 就能把判决
+# 从 70 token 顶到 2700。只回前几个 + 总数，完整清单在计划文件里。
+MAX_PACKS = 10
+
+
+def cap_packs(packs: Any) -> dict[str, Any]:
+    """把 ``skipped_packs`` 压成「前 MAX_PACKS 个 + 总数」；空则返回空字典。"""
+
+    items = list((packs or {}).items())
+    if not items:
+        return {}
+    return {
+        "skipped_packs": dict(items[:MAX_PACKS]),
+        "skipped_packs_total": len(items),
+    }
+
 
 def compact_plan_report(
     plan: Any,
@@ -38,6 +54,7 @@ def compact_plan_report(
     """
 
     problems: list[str] = []
+    warnings: list[str] = []
     stage = "plan"
 
     if applied is not None:
@@ -51,15 +68,21 @@ def compact_plan_report(
         if queue and not queue.get("ok"):
             problems.extend(str(p) for p in queue.get("problems") or [])
         problems.extend(str(p) for p in applied.get("sync_problems") or [])
+        # 预期内的差额（未刊登数据表同步不了）只记警告，不影响判决
+        warnings.extend(str(n) for n in applied.get("sync_notes") or [])
         if applied.get("queue_busy"):
             problems.append(str(applied["queue_busy"]))
 
     if reconcile is not None:
         stage = "reconcile"
         if not reconcile.get("ok"):
-            missed = reconcile.get("mismatched_total", len(reconcile.get("mismatched") or []))
-            gone = reconcile.get("absent_total", len(reconcile.get("absent") or []))
-            problems.append(f"对账不一致 {missed} 行、查不到 {gone} 行")
+            if reconcile.get("error"):
+                # 读错店铺这类"根本没比对"，不能报成 0 行不一致
+                problems.append(str(reconcile["error"]))
+            else:
+                missed = reconcile.get("mismatched_total", len(reconcile.get("mismatched") or []))
+                gone = reconcile.get("absent_total", len(reconcile.get("absent") or []))
+                problems.append(f"对账不一致 {missed} 行、查不到 {gone} 行")
 
     ok = applied is not None and bool(applied.get("ok")) and bool(
         (reconcile or {}).get("ok")
@@ -83,10 +106,15 @@ def compact_plan_report(
         "problems_total": len(problems),
     }
 
+    if warnings:
+        report["warnings"] = warnings[:MAX_PROBLEMS]
+        report["warnings_total"] = len(warnings)
+
     if extra:
-        for key in ("missing", "conflicts", "unmatched_targets", "skipped_packs", "plan_sha256"):
+        for key in ("missing", "conflicts", "unmatched_targets", "plan_sha256"):
             if key in extra and extra[key]:
                 report[key] = extra[key]
+        report.update(cap_packs(extra.get("skipped_packs")))
 
     if verbose:
         report["detail"] = {
@@ -178,7 +206,7 @@ async def run_change(
     write_draft(plan_dir, plan)
 
     if dry_run:
-        return {
+        preview = {
             "ok": True,
             "dry_run": True,
             "kind": kind,
@@ -186,10 +214,12 @@ async def run_change(
             "items": len(items),
             "datasheets": len({item.rowid for item in items}),
             "only_listed": only_listed,
-            "skipped_packs": build_report.get("skipped_packs") or {},
+            "skipped_packs": {},
             "sample": [item.as_dict() for item in items[:5]],
             "hint": "确认无误后传 dry_run=false 执行",
         }
+        preview.update(cap_packs(build_report.get("skipped_packs")))
+        return preview
 
     frozen = freeze(plan_dir, plan)
     # 冻结后回读一次：确认落盘内容和哈希一致，和分步路径同等强度

@@ -81,6 +81,9 @@ class Settings:
     soldeazy_write_enabled: bool = False
     soldeazy_export_profile: str = "55"
     soldeazy_manifest_path: str = ""
+    #: 暴露给模型的工具面：all / soldeazy / official。
+    #: 整份工具 schema 每个请求都会随上下文发一遍，只做一半业务时没必要带上另一半。
+    mcp_toolset: str = "all"
 
     @classmethod
     def load(cls) -> Settings:
@@ -154,6 +157,7 @@ class Settings:
             soldeazy_write_enabled=_env_bool("SOLDEAZY_WRITE_ENABLED", False),
             soldeazy_export_profile=str(_env("SOLDEAZY_EXPORT_PROFILE", "55")).strip(),
             soldeazy_manifest_path=str(_env("SOLDEAZY_MANIFEST_PATH", "")).strip(),
+            mcp_toolset=str(_env("MCP_TOOLSET", "all")).strip().lower() or "all",
         )
 
     @property
@@ -192,6 +196,7 @@ class Settings:
             "soldeazy_credentials_configured": bool(
                 self.soldeazy_username and self.soldeazy_password
             ),
+            "mcp_toolset": self.mcp_toolset,
             "request_timeout_seconds": self.request_timeout,
             "max_retries": self.max_retries,
         }

@@ -174,6 +174,28 @@ def _selector_available() -> bool:
     return importlib.util.find_spec("playwright.async_api") is not None
 
 
+def _shop_scope_hint(shop: str, records: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """如实说明这次搜索到底按哪个店铺过滤了。
+
+    2026-11-11 踩到的坑：既没传 ``shop`` 也没有 active shop 时，``search`` 不加任何
+    店铺过滤，返回的是平台默认店铺的数据（实测那次是 ``EBAY TAY``）。
+    调用方很容易把它当成自己指定的账号，所以这里把过滤状态和实际店铺都回传。
+    """
+
+    scoped = bool((shop or "").strip())
+    hint: dict[str, Any] = {
+        "shop_filter": shop if scoped else "(未设置：平台默认店铺，可能不是你的账号)",
+        "shop_filter_applied": scoped,
+    }
+    if records:
+        seen = sorted({str(row.get("shop") or "").strip() for row in records} - {""})
+        hint["shops_in_result"] = seen
+        hint["shop_scope_mismatch"] = bool(
+            scoped and seen and any(name != shop and shop not in name for name in seen)
+        )
+    return hint
+
+
 class SoldeazyBrowser:
     """Drive the Soldeazy datasheet UI with one persistent browser profile."""
 
@@ -185,10 +207,16 @@ class SoldeazyBrowser:
         self._page: Any = None
         self._lock = asyncio.Lock()
         self.active_shop: dict[str, str] | None = None
+        #: 最近一次 read_datasheet_values 导出的数据里出现的渠道账号名。
+        #: 对账时要靠它确认"读的是不是计划所属的店铺"，否则没设 active_shop 时
+        #: 会读到平台默认店铺，把每一行都判成查不到。
+        self.last_export_shops: list[str] = []
         self._last_query: str = ""
         self._last_site: str = ""
         self._last_status: str = ""
+        self._last_status_value: str = ""
         self._last_date: str = ""
+        self._last_date_value: str = ""
         self.browser_channel_used: str = ""
         self.session_save_error: str = ""
         self.session_cookie_count: int = 0
@@ -580,6 +608,10 @@ class SoldeazyBrowser:
             # 传上去只会让上传数和同步数对不上。
             if only_listed:
                 await self._select_status_listed()
+            else:
+                # 不限状态时必须把档位清回空（=全部）：页面 select 会沿用上次的值，
+                # 不清的话 include_unlisted=true 实际仍按「已刊登」过滤。
+                await self._select_status_all()
             await self._select_scope_whole_result()
             await (await self._locate("search_button")).click()
             await page.wait_for_load_state("domcontentloaded")
@@ -599,12 +631,20 @@ class SoldeazyBrowser:
                     "columns": [],
                     "row_count": 0,
                     "rows": [],
+                    **_shop_scope_hint(shop),
                     "empty_reason": (
                         "没有匹配的数据表"
                         + ("（当前只查已刊登，可能被状态过滤掉了）" if only_listed else "")
                     ),
                 }
 
+            # 搜索提交会把每页条数重置回 25，所以要在搜索**之后**调大页；
+            # 调档是 AJAX 重拉，会保留本次搜索条件（实测 308 笔不变）。
+            # 注意（2026-11-11 实机）：调档的 AJAX 重拉会换掉导出按钮的点击绑定，
+            # 之后再点「导出」弹层不再出现。所以 search 里**只读不改**，
+            # 真正需要大页的勾选动作在 select_datasheets 里自己调档。
+            page_limit = await self._read_page_limit()
+            table = await self._locate("result_table")
             trs = table.locator("tr")
             total = await trs.count()
             cell_rows: list[list[str]] = []
@@ -621,6 +661,9 @@ class SoldeazyBrowser:
                 "columns": header,
                 "row_count": len(records),
                 "rows": records,
+                "page_limit": page_limit,
+                "total_records": await self._read_total_records(),
+                **_shop_scope_hint(shop, records),
             }
 
     async def _ensure_rows_selected(self) -> int:
@@ -758,6 +801,124 @@ class SoldeazyBrowser:
         except Exception:  # noqa: BLE001 - 只是尽力设置
             pass
 
+    async def _select_page_limit(self, limit: int = 200) -> int:
+        """把结果表每页条数调到最大档（实测档位 25/50/100/200，默认 25）。
+
+        平台默认一页只渲染 25 行（308 笔记录分 13 页），而**勾选和同步只作用于
+        渲染出来的行**——历史审计里"计划 209 个数据表、实际只勾选到 18 个"就是这个
+        造成的。导出不受影响（走 whole_result），但搜索回显和勾选都吃这个亏。
+
+        注意（2026-11-11 实测）：调档后 DOM 里确实会出现 200 行，但页面是虚拟化
+        渲染的，视口外的行 `innerText` 读出来是空串，所以**搜索回显仍然只能读到
+        约 60 来行**。要拿全量数据请走导出（``read_datasheet_values`` /
+        ``export``，范围是 whole_result）；这里调档的意义是让勾选框覆盖更多行。
+        返回实际设置的档位；找不到控件返回 0，不阻断。
+        """
+
+        page = await self._ensure_page()
+        before = await page.evaluate(
+            "() => document.querySelectorAll('#tbl_dSheet tr').length"
+        )
+        picked = await page.evaluate(
+            """
+            (wanted) => {
+              const s = document.querySelector('.pagination select.limit');
+              if (!s) return null;
+              const values = Array.from(s.options)
+                .map((o) => parseInt(o.value, 10))
+                .filter((v) => !isNaN(v));
+              if (!values.length) return null;
+              const target = Math.min(wanted, Math.max(...values));
+              if (String(target) !== s.value) {
+                s.value = String(target);
+                s.dispatchEvent(new Event('change', { bubbles: true }));
+                if (window.jQuery) { try { jQuery(s).trigger('chosen:updated'); } catch (e) {} }
+              }
+              return target;
+            }
+            """,
+            int(limit),
+        )
+        if picked:
+            # 换档后表格异步重拉：等行数变化，等不到就按固定延时兜底
+            try:
+                await page.wait_for_function(
+                    "(prev) => document.querySelectorAll('#tbl_dSheet tr').length !== prev",
+                    before,
+                    timeout=8000,
+                    polling=300,
+                )
+            except Exception:  # noqa: BLE001 - 结果不足一页时行数本来就不变
+                pass
+            await asyncio.sleep(max(1.0, self.settings.soldeazy_min_delay / 2))
+        return int(picked or 0)
+
+    async def _read_page_limit(self) -> int:
+        """只读当前每页条数档位，不做任何修改。"""
+
+        page = await self._ensure_page()
+        value = await self._eval_with_retry(
+            page,
+            "() => (document.querySelector('.pagination select.limit') || {}).value || ''",
+        )
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+
+    async def _read_total_records(self) -> int:
+        """读分页条上的总记录数（形如「308 笔记录」），读不到返回 0。"""
+
+        page = await self._ensure_page()
+        text = await self._eval_with_retry(
+            page,
+            """
+            () => {
+              const hits = Array.from(document.querySelectorAll('.pagination a, .pagination li'))
+                .map((e) => (e.textContent || '').trim())
+                .filter((t) => /\\d/.test(t) && t.length < 30);
+              return hits[0] || '';
+            }
+            """,
+        )
+        digits = "".join(ch for ch in str(text or "") if ch.isdigit())
+        return int(digits) if digits else 0
+
+    async def _eval_with_retry(self, page: Any, script: str, arg: Any = None, *, tries: int = 4) -> Any:
+        """页面 AJAX 重拉时 evaluate 会撞导航（context destroyed），重试即可。"""
+
+        last: Exception | None = None
+        for _ in range(tries):
+            try:
+                return await page.evaluate(script, arg) if arg is not None else await page.evaluate(script)
+            except Exception as exc:  # noqa: BLE001 - 只吞导航竞态
+                last = exc
+                text = str(exc)
+                if "destroyed" not in text and "navigation" not in text.lower():
+                    raise
+                await asyncio.sleep(2)
+        raise last or EbayMcpError("SOLDEAZY_EVAL_FAILED", "页面脚本执行失败")
+
+    async def _goto_next_page(self) -> bool:
+        """翻到下一页；没有下一页（或按钮禁用）返回 False。"""
+
+        page = await self._ensure_page()
+        moved = await self._eval_with_retry(
+            page,
+            """
+            () => {
+              const a = document.querySelector('.pagination a.next.btn_goto:not(.disabled)');
+              if (!a) return false;
+              a.click();
+              return true;
+            }
+            """,
+        )
+        if moved:
+            await page.wait_for_load_state("domcontentloaded")
+            await asyncio.sleep(self.settings.soldeazy_min_delay)
+        return bool(moved)
+
     async def _clear_date_filter(self) -> None:
         """修改日期默认留空，不沿用页面上次的值。找不到就跳过。"""
 
@@ -773,12 +934,13 @@ class SoldeazyBrowser:
                   if (!blank) return null;
                   sel.value = blank.value;
                   sel.dispatchEvent(new Event('change', { bubbles: true }));
-                  return (blank.textContent || '').trim();
+                  return { value: blank.value, text: (blank.textContent || '').trim() };
                 }
                 """
             )
             if cleared is not None:
-                self._last_date = str(cleared)
+                self._last_date = str(cleared.get("text") or "")
+                self._last_date_value = str(cleared.get("value") or "")
         except Exception:  # noqa: BLE001 - 尽力而为，不阻断搜索
             pass
 
@@ -811,6 +973,31 @@ class SoldeazyBrowser:
         )
         if picked:
             self._last_status = str(picked.get("text") or "")
+            self._last_status_value = str(picked.get("value") or "")
+
+    async def _select_status_all(self) -> None:
+        """把状态档位清回空（= 全部）。页面 select 会沿用上次的值。"""
+
+        page = await self._ensure_page()
+        picked = await page.evaluate(
+            """
+            () => {
+              const sel = Array.from(document.querySelectorAll('select'))
+                .find((x) => x.name === 'listactive');
+              if (!sel) return null;
+              const blank = Array.from(sel.options).find((o) => !(o.value || '').trim());
+              if (!blank) return null;
+              if (sel.value !== blank.value) {
+                sel.value = blank.value;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              return { value: blank.value, text: (blank.textContent || '').trim() };
+            }
+            """
+        )
+        if picked:
+            self._last_status = str(picked.get("text") or "") or "(空=全部)"
+            self._last_status_value = str(picked.get("value") or "")
 
     async def _select_site(self, site: str) -> None:
         """站点下拉里用的是英文站点名（US/UK/Germany…），不是 US/DE 这种代码。"""
@@ -837,9 +1024,10 @@ class SoldeazyBrowser:
     async def export_via_api(self, dest: Path, *, profile: str = "55") -> dict[str, Any]:
         """不导航页面，直接用会话 cookie 提交导出表单。
 
-        **待实机验证**：表单字段取自 2026-11-07 抓包（`bulk_option=whole_result`
-        + `listExppf=55` + `listExpfmt=xlsx`）。验证通过前不要作为默认通道，
-        现有的 `export()` 仍然走页面。
+        2026-11-11 起作为**默认导出通道**：页面通道的弹层（`#jqizoo`）在部分
+        会话下点「导出」后不出现（FUN 实机复现），而本通道的筛选参数直接取自
+        最近一次 search（`_last_query` / `_last_site` / `_last_status_value` /
+        `_last_date_value`），行集与计划一致，且实测一次拿到全量 7075 行。
         """
 
         page = await self._ensure_page()
@@ -854,7 +1042,11 @@ class SoldeazyBrowser:
             "txtproductcode": self._last_query,
             "listshop[]": shop_id,
             "listsite": site_code,
-            "listdate": "month",
+            # 筛选条件必须和最近一次 search 完全一致，否则导出的行集对不上计划：
+            # 日期默认留空（search 里清过），状态沿用 search 选中的档位
+            # （only_listed=True 时是「已刊登(所有)」，False 时留空=全部）。
+            "listdate": self._last_date_value or "",
+            "listactive": self._last_status_value or "",
             "view_profile_id": "Default",
             "radioEditTypeValue": "schedule",
             "bulk_option_from": "1",
@@ -975,64 +1167,114 @@ class SoldeazyBrowser:
 
         return {"success": True, "path": str(path), "file": path.name}
 
-    async def select_datasheets(self, rowids: Sequence[str]) -> int:
-        """只勾选指定的数据表（BULK SYNC 作用于勾选行）。返回勾选数量。"""
+    async def select_datasheets(self, rowids: Sequence[str], *, max_pages: int = 40) -> dict[str, Any]:
+        """只勾选指定的数据表（BULK SYNC 作用于勾选行）。
+
+        返回 ``{selected, wanted, pages_walked, found, missing}``：
+        勾选和同步**只作用于当前页渲染出来的行**，而结果表是分页的
+        （默认 25 行/页，可调到 200）。历史审计里"计划 209 个数据表、实际只勾选到
+        18 个"就是因为目标行在后面的页上。这里先把每页条数调到最大档再逐页翻找，
+        直到全部勾上或翻完。
+
+        勾选只是尽力而为：``sync_up_via_api`` 现在按完整清单传 ``table_row_ids``，
+        服务端以参数为准；勾不全只会记警告（见 apply_plan），同步任务的实际条数
+        仍由工序队列核对兜底。
+        """
 
         wanted = {str(item).strip() for item in rowids if str(item).strip()}
         if not wanted:
-            return 0
+            return {"selected": 0, "wanted": 0, "pages_walked": 0, "found": [], "missing": []}
         page = await self._ensure_page()
-        return await page.evaluate(
-            """
-            (wanted) => {
-              const set = new Set(wanted);
-              let count = 0;
-              document.querySelectorAll('#tbl_dSheet tr').forEach((r) => {
-                const box = r.querySelector('input[type=checkbox]');
-                if (!box) return;
-                const cells = Array.from(r.cells).map((c) => (c.innerText || '').trim());
-                const id = cells.find((t) => set.has(t));
-                if (id && !box.checked) {
-                  box.click();
-                  count += 1;
-                } else if (id && box.checked) {
-                  count += 1;
-                } else if (!id && box.checked) {
-                  box.click();
+        # 导出已改走 cookie/API 通道，不再依赖页面弹层，这里调档是安全的；
+        # 每页渲染上限约 65 行（虚拟化），调大档能显著减少翻页次数。
+        await self._select_page_limit(200)
+
+        async def _click_page() -> dict[str, Any]:
+            # 调档/翻页都是 AJAX 重拉，evaluate 可能正好撞在导航上
+            # （2026-11-11 实机：Execution context was destroyed）。重试即可。
+            return await self._eval_with_retry(
+                page,
+                """
+                (wanted) => {
+                  const set = new Set(wanted);
+                  let count = 0;
+                  const hit = [];
+                  document.querySelectorAll('#tbl_dSheet tr').forEach((r) => {
+                    const box = r.querySelector('input[type=checkbox]');
+                    if (!box) return;
+                    const cells = Array.from(r.cells).map((c) => (c.innerText || '').trim());
+                    const id = cells.find((t) => set.has(t));
+                    if (id && !box.checked) {
+                      box.click();
+                      count += 1;
+                      hit.push(id);
+                    } else if (id && box.checked) {
+                      count += 1;
+                      hit.push(id);
+                    } else if (!id && box.checked) {
+                      box.click();
+                    }
+                  });
+                  return { count, hit };
                 }
-              });
-              return count;
-            }
-            """,
-            list(wanted),
-        )
+                """,
+                list(wanted),
+            )
+
+        found: set[str] = set()
+        pages_walked = 1
+        result = await _click_page()
+        found.update(result.get("hit") or [])
+
+        while len(found) < len(wanted) and pages_walked < max_pages:
+            if not await self._goto_next_page():
+                break
+            pages_walked += 1
+            result = await _click_page()
+            found.update(result.get("hit") or [])
+
+        return {
+            "selected": len(found),
+            "wanted": len(wanted),
+            "pages_walked": pages_walked,
+            "found": sorted(found),
+            "missing": sorted(wanted - found),
+        }
 
     async def sync_up_via_api(
-        self, *, price_postage: bool = True, quantity: bool = False
+        self, *, price_postage: bool = True, quantity: bool = False,
+        row_ids: Sequence[str] | None = None,
     ) -> dict[str, Any]:
         """用接口提交「同步上平台」，替代点弹框。
 
         前提：当前页面已在搜索结果上、且目标行已勾选（`table_row_ids`）。
         `sql_cache_token` 由本次搜索下发，必须从页面上取，不能沿用旧值。
+
+        ``row_ids`` 显式传入时直接用它——勾选框只在当前页存在，跨页勾选后
+        页面上读到的勾选集合不完整，接口参数必须按计划的完整清单给。
         """
 
         page = await self._ensure_page()
-        token = await page.evaluate(
-            "() => ((document.querySelector('input[name=sql_cache_token]')||{}).value || '')"
+        token = await self._eval_with_retry(
+            page,
+            "() => ((document.querySelector('input[name=sql_cache_token]')||{}).value || '')",
         )
-        row_ids = await page.evaluate("""
-        () => {
-          const out = [];
-          Array.from(document.querySelectorAll('#tbl_dSheet tr')).forEach(r => {
-            const box = r.querySelector('input[type=checkbox]');
-            if (!box || !box.checked) return;
-            const cells = Array.from(r.cells).map(c => (c.innerText || '').trim());
-            const hit = cells.find(t => /^[0-9]{6,}$/.test(t));
-            if (hit) out.push(hit);
-          });
-          return out;
-        }
-        """)
+        if row_ids:
+            row_ids = [str(item).strip() for item in row_ids if str(item).strip()]
+        else:
+            row_ids = await self._eval_with_retry(page, """
+            () => {
+              const out = [];
+              Array.from(document.querySelectorAll('#tbl_dSheet tr')).forEach(r => {
+                const box = r.querySelector('input[type=checkbox]');
+                if (!box || !box.checked) return;
+                const cells = Array.from(r.cells).map(c => (c.innerText || '').trim());
+                const hit = cells.find(t => /^[0-9]{6,}$/.test(t));
+                if (hit) out.push(hit);
+              });
+              return out;
+            }
+            """)
         if not row_ids:
             raise EbayMcpError("SOLDEAZY_NO_SELECTION", "没有勾选任何数据表，无法同步。")
 
@@ -1395,11 +1637,10 @@ class SoldeazyBrowser:
         if search:
             await self.search(query, site, only_listed=only_listed)
 
-        page = await self._ensure_page()
         workdir = Path(self.profile_dir).parent / "reconcile"
         workdir.mkdir(parents=True, exist_ok=True)
         target = workdir / f"state_{int(asyncio.get_running_loop().time())}.xlsx"
-        await self.export(target)
+        await self.export_via_api(target)
 
         from ebay_mcp_server.providers.soldeazy_workbook import header_row_count
 
@@ -1408,6 +1649,13 @@ class SoldeazyBrowser:
         current = ""
         parent = ""
         header = header_row_count(matrix)
+        self.last_export_shops = sorted(
+            {
+                str(row[1] or "").strip()
+                for row in matrix[header:]
+                if len(row) > 1 and str(row[1] or "").strip()
+            }
+        )
         for row in matrix[header:]:
             rowid = str(row[0] or "").strip()
             psku = str(row[2] or "").strip()

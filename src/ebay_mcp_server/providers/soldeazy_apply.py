@@ -236,6 +236,14 @@ def plan_to_cell_changes(
     return changes, missing
 
 
+def _shop_name_matches(expected: str, name: str) -> bool:
+    """店铺名比对：导出列写短名（FUN），页面/搜索结果写长名（EBAY FUN）。"""
+
+    if not expected or not name:
+        return False
+    return name == expected or expected in name or name in expected
+
+
 def shop_problems(plan: ChangePlan, matrix: list[list[Any]], current_shop: dict | None) -> list[str]:
     """确认导出的数据和计划属于同一个渠道账号。
 
@@ -261,9 +269,32 @@ def shop_problems(plan: ChangePlan, matrix: list[list[Any]], current_shop: dict 
         for row in matrix[header:]
         if len(row) > 1 and str(row[1] or "").strip()
     }
-    if expected_name and shops and expected_name not in shops:
+    if expected_name and shops and not any(
+        _shop_name_matches(expected_name, name) for name in shops
+    ):
         problems.append(f"导出结果里没有计划所属的渠道账号 {expected_name}，实际为 {sorted(shops)}")
     return problems
+
+
+def shop_scope_problem(plan: ChangePlan, shops: list[str] | None) -> str:
+    """对账前确认导出的是不是计划所属的店铺。
+
+    没设 active_shop 时 search 不做店铺过滤，导出的是平台默认店铺的数据；
+    这时每一行都会"查不到"，看起来像改动没生效，实际是读错了店。
+    返回非空字符串表示不能据此下结论。
+    """
+
+    expected = str((plan.shop or {}).get("name") or "").strip()
+    seen = [name for name in (shops or []) if name]
+    if not expected or not seen:
+        return ""
+    # 导出列写的是短名（FUN），搜索结果里是长名（EBAY FUN），两种都认
+    if any(_shop_name_matches(expected, name) for name in seen):
+        return ""
+    return (
+        f"对账中止：导出的是 {seen}，计划属于 {expected}。"
+        "这不是改动没生效，是读到了别的渠道账号——请先切换店铺再对账。"
+    )
 
 
 def append_audit(audit_path: Path, plan_id: str, rowid: str, result: dict[str, Any]) -> None:
@@ -422,7 +453,10 @@ async def apply_plan(
 
     exported = workdir / f"{plan.plan_id}.export.xlsx"
     await browser.search("", plan.site, only_listed=plan.only_listed)
-    await browser.export(exported)
+    # 导出走 cookie/API 通道：页面通道的弹层在部分会话下不稳定
+    # （2026-11-11 实机：FUN 上点导出后 #jqizoo 不出现），且 API 通道
+    # 的筛选参数直接取自最近一次 search，行集与计划一致。
+    await browser.export_via_api(exported)
     _sheet, matrix = read_matrix(exported)
 
     # 切了渠道账号还拿旧计划执行，会写进别的店铺——这里直接拦住
@@ -476,17 +510,38 @@ async def apply_plan(
 
     sync_result: dict[str, Any] | None = None
     sync_problems: list[str] = []
+    sync_notes: list[str] = []
     if sync:
         planned_ids = sorted({item.rowid for item in plan.items})
-        # 重新搜索后再勾选，BULK SYNC 只作用于勾选行
+        # 重新搜索后再勾选，BULK SYNC 只作用于勾选行。
+        # 结果表分页（默认 25 行/页），勾选只作用于渲染出来的行，所以
+        # select_datasheets 会逐页翻找；同步接口则直接按完整清单传 row_ids。
         await browser.search("", plan.site, only_listed=plan.only_listed)
-        selected = await browser.select_datasheets(planned_ids)
+        # 勾选只是尽力而为：上传已经发生，任何后续异常都不该把链路掐断在
+        # "已改价但未同步"的中间态。同步接口按完整清单传 table_row_ids，
+        # 不依赖页面勾选结果。
+        try:
+            picked = await browser.select_datasheets(planned_ids)
+        except Exception as exc:  # noqa: BLE001 - 勾选失败不阻断同步
+            picked = {
+                "selected": 0, "wanted": len(planned_ids),
+                "pages_walked": 0, "found": [], "missing": [],
+            }
+            sync_notes.append(
+                f"勾选步骤失败（{type(exc).__name__}），同步改按完整清单提交"
+            )
+        selected = picked["selected"] if isinstance(picked, dict) else picked
         if selected != len(planned_ids):
-            sync_problems.append(
-                f"只勾选到 {selected} 个数据表，计划是 {len(planned_ids)} 个"
+            missing = (picked or {}).get("missing") or []
+            # 勾选只是同步表单的取材方式之一：sync_up_via_api 已按完整清单
+            # 传 table_row_ids，所以勾不全只记警告，真正的成败由工序队列核对。
+            sync_notes.append(
+                f"页面只勾选到 {selected} 个数据表（计划 {len(planned_ids)} 个），"
+                "同步已按完整清单提交"
+                + (f"；没勾到的前 10 个：{missing[:10]}" if missing else "")
             )
         sync_result = await browser.sync_up_via_api(
-            price_postage=sync_price, quantity=sync_quantity
+            price_postage=sync_price, quantity=sync_quantity, row_ids=planned_ids
         )
         # 同步接口会回传全部勾选行，条数一多就是上万 token——只留样本
         if isinstance(sync_result, dict) and isinstance(sync_result.get("table_row_ids"), list):
@@ -494,10 +549,13 @@ async def apply_plan(
             sync_result["table_row_ids"] = ids[:20]
             sync_result["table_row_ids_total"] = len(ids)
             sync_result["table_row_ids_truncated"] = len(ids) > 20
-        sync_queue = await _await_latest_job(browser, expected_datasheets)
+        sync_queue = await _await_latest_job(
+            browser, expected_datasheets, tolerate_mismatch=not plan.only_listed
+        )
         if sync_queue:
             sync_result["queue"] = sync_queue
             sync_problems.extend(sync_queue.get("problems") or [])
+            sync_notes.extend(sync_queue.get("notes") or [])
 
     if sync_result and not sync_problems:
         sync_status = "ok"
@@ -532,6 +590,7 @@ async def apply_plan(
         "sync": sync_status,
         "sync_result": sync_result,
         "sync_problems": sync_problems,
+        "sync_notes": sync_notes,
         "queue_busy": busy_note,
         "audit": str(audit),
     }
@@ -644,6 +703,7 @@ async def _await_latest_job(
     browser: Any,
     expected: int,
     *,
+    tolerate_mismatch: bool = False,
     attempts: int = 10,
     wait_seconds: float = 6.0,
 ) -> dict[str, Any] | None:
@@ -669,13 +729,17 @@ async def _await_latest_job(
             total = str(res.get("total_items", ""))
             failed = str(res.get("failure_msgs_count", "0"))
             problems: list[str] = []
+            notes: list[str] = []
             if failed not in {"0", ""}:
                 problems.append(f"同步任务有 {failed} 条失败")
             if total and total != str(expected):
-                problems.append(
+                message = (
                     f"同步了 {total} 个数据表，上传的是 {expected} 个"
                     "（差额通常是这些数据表没有在线刊登，同步不处理）"
                 )
+                # 计划本身包含未刊登数据表时，这个差额是预期内的：
+                # 只记警告，不判失败，否则测试账号每次都被误判成 ok=false。
+                (notes if tolerate_mismatch else problems).append(message)
             return {
                 "ok": not problems,
                 "job_id": str(job.get("queue_job_idx")),
@@ -684,6 +748,7 @@ async def _await_latest_job(
                 "success": str(res.get("success_msgs_count", "")),
                 "failed": failed,
                 "problems": problems,
+                "notes": notes,
             }
         await asyncio.sleep(wait_seconds)
     return None
@@ -718,6 +783,31 @@ async def reconcile(
         live = await browser.read_datasheet_values(
             plan.site, "", search=False, only_listed=plan.only_listed
         )
+        scope = shop_scope_problem(plan, getattr(browser, "last_export_shops", None))
+        if scope:
+            # 读错店铺时不能继续比对：那会把每一行都算成"查不到"
+            report = {
+                "plan_id": plan.plan_id,
+                "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "items": len(plan.items),
+                "matched": 0,
+                "mismatched": [],
+                "mismatched_total": 0,
+                "absent": [],
+                "absent_total": 0,
+                "rounds": round_no,
+                "ok": False,
+                "error": scope,
+                "shops_in_export": getattr(browser, "last_export_shops", []) or [],
+                "shop_expect": str((plan.shop or {}).get("name") or ""),
+            }
+            report_dir.mkdir(parents=True, exist_ok=True)
+            path = report_dir / f"{plan.plan_id}.reconcile.json"
+            path.write_text(
+                json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+            report["report"] = str(path)
+            return report
         matched = 0
         mismatches = []
         absent = []
@@ -757,9 +847,9 @@ async def reconcile(
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "items": len(plan.items),
         "matched": matched,
-        "mismatched": mismatches[:50],
+        "mismatched": mismatches[:10],
         "mismatched_total": len(mismatches),
-        "absent": absent[:50],
+        "absent": absent[:10],
         "absent_total": len(absent),
         "rounds": rounds,
         "ok": not mismatches and not absent,

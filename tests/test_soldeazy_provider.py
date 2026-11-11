@@ -185,6 +185,42 @@ def test_parse_rows_survives_a_column_shift() -> None:
     assert record["price"] == pytest.approx(20.99)
 
 
+def test_shop_scope_hint_admits_when_no_shop_filter_was_applied() -> None:
+    """2026-11-11：不传 shop 时搜索不做过滤，返回的是平台默认店铺。
+
+    那次实际返回的是 EBAY TAY 的数据，却很容易被当成 FUN 的，所以必须如实回传。
+    """
+
+    from ebay_mcp_server.providers.soldeazy import _shop_scope_hint
+
+    hint = _shop_scope_hint("")
+    assert hint["shop_filter_applied"] is False
+    assert "未设置" in hint["shop_filter"]
+
+
+def test_shop_scope_hint_lists_the_shops_actually_returned() -> None:
+    from ebay_mcp_server.providers.soldeazy import _shop_scope_hint
+
+    records = [{"shop": "EBAY TAY"}, {"shop": "EBAY TAY"}]
+
+    hint = _shop_scope_hint("FUN", records)
+    assert hint["shop_filter_applied"] is True
+    assert hint["shops_in_result"] == ["EBAY TAY"]
+    assert hint["shop_scope_mismatch"] is True     # 说是 FUN，回来的是 TAY
+
+    same = _shop_scope_hint("FUN", [{"shop": "FUN"}])
+    assert same["shop_scope_mismatch"] is False
+
+
+def test_shop_scope_hint_tolerates_prefixed_shop_names() -> None:
+    """平台里的店铺名是 EBAY LT 这种，查询用简称 LT，不能算不一致。"""
+
+    from ebay_mcp_server.providers.soldeazy import _shop_scope_hint
+
+    hint = _shop_scope_hint("LT", [{"shop": "EBAY LT"}])
+    assert hint["shop_scope_mismatch"] is False
+
+
 def test_status_exposes_session_state_without_credentials(tmp_path) -> None:
     """无凭据时 status 必须明说，而不是让调用方去猜"为什么要人工登录"。"""
 

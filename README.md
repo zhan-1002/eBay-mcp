@@ -179,6 +179,76 @@ soldeazy_change_stock(site=US, targets={排插-P: 50})
 econcile_plan），
 适合需要人工逐步确认的场景；批量作业请用一步入口。
 
+#### 工具面：每个请求都要重发的固定成本
+
+判决已经压到几十 token，真正的大头在**工具清单**——它每轮对话都随上下文重发一次。
+实测 30 个工具的完整 schema 是 27,463 字符 ≈ **7,565 token/请求**，是判决的 25–100 倍。
+
+两处削减（token 用仓库自己的 `_estimate_tokens` 实测）：
+
+| 措施 | 效果（token/请求） | 开关 |
+|---|---|---|
+| 关掉自动生成的 `outputSchema` | 7,565 → 6,752（−813） | 默认生效，无需配置 |
+| 只挂需要的工具子集 | 6,752 → 4,225（−2,527） | `MCP_TOOLSET=soldeazy` |
+
+两项叠加：30 → 16 个工具，**7,565 → 4,225 token（−3,340，约 44%）**。
+
+`outputSchema` 每个工具都只有一句 `{"additionalProperties": true, "type": "object"}`，
+零信息；关掉后调用方拿到的仍是同一份 JSON 文本，只是不再有 `structuredContent`。
+
+`MCP_TOOLSET` 三档：
+
+```powershell
+MCP_TOOLSET=all        # 默认，30 个工具
+MCP_TOOLSET=soldeazy   # 16 个：只做改价/改库存/数据表
+MCP_TOOLSET=official   # 14 个：只做官方 Browse/Taxonomy/Feedback 等
+```
+
+写错值会直接启动失败，不会静默退回全部——省 token 的前提是真的省下来了。
+被裁掉的工具只是不注册，模块里的函数仍然可以正常调用和测试。
+
+另外，`skipped_packs` 也加了上限：每个基础 SKU 可能挂着 x2/x4/US 好几个套装，
+200 个 SKU 能把判决从 70 token 顶到 2,700。现在只回前 10 个 + `skipped_packs_total`，
+完整清单在计划文件里。
+
+#### 成百上千条时：把目标放进文件
+
+真正的批量改动（几百上千个 SKU）里，**最贵的是入参**，不是返回——
+`targets` 内联字典要模型逐条生成，而且会整段留在上下文里，之后每一轮都重发。
+
+用 `targets_file` 给一个路径，几千条就都留在磁盘上（实测，仓库口径估算）：
+
+| 条数 | 内联 `targets` | CSV 全文 | 只给路径 |
+|---|---|---|---|
+| 50 | 261 | 216 | 5 |
+| 200 | 1,045 | 854 | 5 |
+| 500 | 2,612 | 2,129 | 5 |
+| 2000 | **10,450** | 8,504 | **5** |
+
+一次 2000 条的改动，若之后还有 10 轮对话（每轮重发上下文）：
+
+- 内联：10,450 + 11 × (10,450 + 4,225 + 70) ≈ **172,645 token**
+- 给文件：5 + 11 × (5 + 4,225 + 70) ≈ **47,305 token**
+
+差出来的 12 万就是那 2000 条 SKU 在每轮对话里被重复发送。Excel 更好：
+`.xlsx` 是二进制，根本不以文本形式进入对话。
+
+支持的格式：
+
+- **Excel**：`.xlsx`，表头含 `SKU` 加一列数值（`库存`/`数量`/`价格`/`price` 等），
+  与运营维护的 `库存更新.xlsx`（`SKU | 库存 | 备注`）直接兼容；
+- **文本/CSV**：一行一条 `SKU=价格`、`SKU,价格` 或制表符分隔，`#` 是注释，
+  首个字段不是数字的行按表头跳过。
+
+```python
+soldeazy_change_stock(targets={}, targets_file="库存更新.xlsx")
+soldeazy_change_price(targets={}, targets_file="targets.csv")
+```
+
+给文件时 `targets` 传 `{}`；两个同时给会报 `SOLDEAZY_TARGETS_AMBIGUOUS`，
+文件有脏行（重复 SKU、非数字、负数量）会整份拒收（`SOLDEAZY_TARGETS_FILE`），
+**一条都不会写出去**。
+
 ### 三个必须记住的坑
 
 1. **导出文件有两行表头**（技术表头 + 显示表头）。裁剪上传文件时必须两行都保留，
@@ -195,7 +265,15 @@ econcile_plan），
 | `SOLDEAZY_HEADLESS` | `1`（无头） | 日常零窗口；只有首次登录需要人工时才开有头 |
 | `SOLDEAZY_EXPORT_CHANNEL` | `page` | 可切 `cookie`，两者输出逐格一致（已验收） |
 | `SOLDEAZY_BROWSER_CHANNEL` | `chrome` | 见下方"浏览器内核" |
-| `SOLDEAZY_PROFILE_DIR` | `%LOCALAPPDATA%\ebay-mcp\profiles\soldeazy` | 登录态存放位置，可覆盖 |
+| `SOLDEAZY_PROFILE_DIR` | 未设时 `%LOCALAPPDATA%\ebay-mcp\profiles\soldeazy` | 登录态存放位置。**本仓库实机必须显式设成 `<仓库>\.soldeazy-data\profile`**，见下方说明 |
+| `MCP_TOOLSET` | `all` | 工具面：`all` / `soldeazy` / `official`，见上文「工具面」 |
+
+> **数据目录别搞错**：`SOLDEAZY_PROFILE_DIR` 只决定登录态放哪，**计划目录固定取它的兄弟目录**
+> `<PROFILE_DIR 的父目录>\soldeazy-plans`（`server._plan_dir()`）。
+> 本仓库实机部署时该变量由 MCP 客户端注入为 `<仓库>\.soldeazy-data\profile`，
+> 因此计划和审计都落在 `<仓库>\.soldeazy-data\soldeazy-plans`，
+> **不是** `%LOCALAPPDATA%\ebay-mcp`。完整配置见 `docs/部署到其他电脑.md`。
+> 不确定当前指向哪里时，调 `soldeazy_status`，返回里同时有 `profile_dir` 和 `plan_dir`。
 | 登录态 | cookie 落盘 | 登录时勾「记住用户名」，cookie 存 `session_cookies.json`（含会话级），重启可复用 |
 
 ### 浏览器内核（换机器部署必看）
@@ -306,6 +384,13 @@ uv run playwright install chromium
 `ebay_read_skill` 兼容读取工具。
 
 ## 快速开始
+
+> **测试纪律**：唯一允许写入的测试账号是 `FUN`（shop_idx=159），它全是未刊登，
+> 已刊登筛选下为 0 行，必须传 `include_unlisted=true` 才搜得到；
+> `LT`（shop_idx=4432）有真实刊登，**禁止写入**。
+> **搜索一定要显式 `shop`**：不传店铺且没有 active shop 时不做任何过滤，
+> 返回的是平台默认店铺（实测那次是 EBAY TAY），跟 FUN 无关。
+> 详见 `TODO.md` 的「测试纪律」。
 
 ```powershell
 Copy-Item .env.example .env

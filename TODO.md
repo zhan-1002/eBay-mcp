@@ -169,16 +169,134 @@
 
 ## Soldeazy 待办
 
-### 1. `include_unlisted` 下的同步条数判定（暂不处理）
+### 0. 测试纪律（硬约束，先看这条）
 
-- **现象**：测试账号 FUN 的数据表都是未刊登，`include_unlisted=True` 时上传 N 条、
-  同步 0 条，`sync_problems` 非空会让 `ok=false`，属于误报。
-- **待定规则**：当计划本身是 `only_listed=false` 时，同步条数不符只记警告、不判失败。
-- **为什么先不做**：这条会松动生产的安全边界，需要在真实账号上验证"哪些算正常差额"。
-- **状态**：记录待办，暂不修改。
+- **唯一允许写入的测试账号是 `FUN`（shop_idx=159）**。它名下的数据表是**未刊登**的，
+  所以在「已刊登(所有)」筛选下**搜到 0 行**（2026-11-11 实测）；任何要读/写它的测试
+  都必须传 `include_unlisted=true`，否则会误判成"目标不存在"。
+- **搜索必须显式指定店铺，否则看到的不是你的店铺。**（2026-11-11 踩到）
+  `search()` 只有在传了 `shop`（或先 `switch_shop` 设了 `active_shop`）时才加店铺过滤；
+  两样都没有时**不做任何过滤**，返回的是平台默认店铺的数据。
+  实测：同一个 `US / 已刊登(所有)` 查询，不加过滤返回 25 行全属 **EBAY TAY**；
+  显式 `FUN` 返回 **0 行**；显式 `LT` 返回 25 行全属 EBAY LT。
+  所以**看完结果先看 `search()["shop"]` 和行内店铺分布**，别假设是 FUN。
+- **`LT`（shop_idx=4432）有真实刊登，绝对禁止写入。** 读它是可以的（25 行，SKU `2401`）。
+- 实机数据在仓库 `.soldeazy-data`：登录态 `.soldeazy-data\profile`，
+  计划与审计 `.soldeazy-data\soldeazy-plans`（profile 的兄弟目录）。
+  **不是** `%LOCALAPPDATA%\ebay-mcp`。
+- 只读操作（`soldeazy_status` / `search_datasheet` / `list_shops`）可以随便跑。
+
+### 1. `include_unlisted` 下的同步条数判定（已按「只警告不判失败」实现）
+
+- **原记录**：FUN 全是未刊登时，上传 N 条、同步 0 条，`sync_problems` 非空会让
+  `ok=false`，属于误报。
+- **2026-11-11 实测取证（只读 + 一次登录，未写任何数据）**：
+  - 工序队列 25 个任务**全是 `DSUploadTask`，从来没有任何同步类任务**——
+    说明 `_await_latest_job` 那条"同步了 N 个数据表"的比对，实际很少触发；
+  - 勾选没问题：请求 8 个、实际勾上 8 个；
+  - 状态筛选没问题：页面默认空值（=全部），`only_listed=True` 会切到「已刊登(所有)」；
+  - **注意**：这次取证没加店铺过滤，行不属于 FUN（见第 0 条），
+    所以"FUN 现在的数据是什么状态"仍然只有一条可靠结论：**已刊登筛选下 0 行**。
+  - **原症状没能复现**。
+- **已做的修改**：`apply_plan` 把 `tolerate_mismatch=not plan.only_listed` 传给
+  `_await_latest_job`——计划本身包含未刊登时，条数差额进 `notes`（→ 判决里的
+  `warnings`），不判失败；**失败条数（`failed != 0`）仍然严格判失败**。
+  已刊登账号的安全边界没有放宽。
+- **仍需真实复现**：等 FUN 再出现未刊登数据表时，跑一次完整改动确认 `warnings`
+  里出现该提示、且 `ok=true`。
 
 ### 2. 校验策略：判决优先，失败才深挖
 
-- `soldeazy_change_price` / `soldeazy_change_stock` 默认只回判决（约 90–130 token）。
+- `soldeazy_change_price` / `soldeazy_change_stock` 默认只回判决（约 70 token）。
 - 只有 `ok=false` 时，才用 `verbose=true` 或分步工具（`reconcile_plan` 等）做细核对。
 - 原因：让模型逐条读明细校验，实测累积到 6000 万 token；校验留在服务端才有意义。
+
+### 3. 进度（2026-11-11）
+
+已完成，均为离线改动 + 离线测试，**未对任何账号发过写操作**：
+
+| 项 | 结果 | 位置 |
+|---|---|---|
+| 关掉自动生成的 `outputSchema` | 7,565 → 6,752 token/请求 | `server.disable_output_schema()` |
+| `MCP_TOOLSET` 工具面子集 | 30 → 16 个工具，再降到 4,225 token/请求 | `server.apply_toolset()`、`config.mcp_toolset` |
+| `skipped_packs` 截断 | 每次判决最多再省 2,700 token | `soldeazy_change.cap_packs()` |
+| 批量目标走文件 `targets_file` | 2000 条入参 10,450 → 5 token | `providers/soldeazy_targets.py` |
+| `include_unlisted` 同步条数只警告 | 未刊登计划不再误判 `ok=false` | `soldeazy_apply._await_latest_job` |
+| 默认 `limit` 与闸门对齐 | 50 行必被拦 → 20 行可直接返回 | `server._cap_rows`、`plan_changes`、`reconcile` |
+| 搜索如实回传店铺范围 | 不再静默返回默认店铺的数据 | `soldeazy._shop_scope_hint` |
+| 对账店铺校验 | 读错店铺不再误报成"改动没生效" | `soldeazy_apply.shop_scope_problem` |
+| 店铺名长短名兼容 | 导出列 `FUN` / 页面 `EBAY FUN` 都认 | `soldeazy_apply._shop_name_matches` |
+| 结果表分页修复 | 每页 25 → 200；勾选逐页翻找；同步按完整清单传 row_ids | `soldeazy._select_page_limit` / `select_datasheets` / `sync_up_via_api` |
+| `ebay_get_sales_history` 明细截断 | 默认每 item 只回 20 条成交（旧版单次 3.3 万字符） | `server.ebay_get_sales_history` |
+| `ebay_validate_titles` 可不回显标题 | `include_titles=false` 省约 8k 字符/次 | `server.ebay_validate_titles` |
+| 明文凭据迁到 `.env` | Cert ID / 紫鸟密码 / DeepSeek key 已离开 `config.local.json` | `.env`（不入库） |
+| 数据目录文档对齐 | README 写明本机指到 `.soldeazy-data`，`status` 回显 `plan_dir` | README、`.env.example` |
+
+### 4. 导出/对账的店铺一致性（2026-11-11 检查结果）
+
+- **apply 本来就是安全的**：`shop_problems()` 同时校验「活动账号 id」和「导出文件里的店铺名」，
+  不一致就在上传前中止。
+- **对账原来没有校验**：`reconcile` 直接 search + export，既不传 `shop` 也不检查导出内容。
+  没设 `active_shop` 时导出的是平台默认店铺，每一行都会被判成"查不到"，
+  看起来像改动没生效，实际是读错了店。
+- **已修**：`read_datasheet_values` 记录本次导出的店铺名（`last_export_shops`），
+  `reconcile` 先调 `shop_scope_problem()`，不一致就**中止并写明原因**，
+  返回 `error` 而不是 `absent_total=N`；判决层把这条 error 原样报出。
+- **店铺名两种写法都要认**：导出文件第 1 列是短名 `FUN`（实测历史 export 确认），
+  页面和搜索结果里是长名 `EBAY FUN`。统一成 `_shop_name_matches()`，
+  避免格式差异导致误报"没有计划所属的渠道账号"而中止上传。
+
+测试：`223 passed`。
+
+### 5. 结果表分页：旧版"勾选不全"的根因（2026-11-11 实机取证）
+
+- **现象来源**：另一台机器的历史审计里"一次计划 209 个数据表，实际只勾选到 18 个"。
+- **根因（LT 只读实测）**：结果表 `#tbl_dSheet` 是分页的，分页条
+  `.pagination select.limit` 档位 25/50/100/200，**默认 25 行/页**；
+  308 笔记录分 13 页。勾选框和 BULK SYNC 只作用于**渲染出来的行**，
+  所以旧版 `select_datasheets` 只能勾到第 1 页里的目标。
+- **另外两个坑**：
+  - 搜索提交会把每页条数**重置回 25**，所以调档必须放在搜索之后；
+  - 调档后 DOM 有 200 行，但页面是虚拟化渲染，视口外的行 `innerText` 为空，
+    搜索回显仍只能读到约 60 行——**全量数据必须走导出（whole_result）**。
+- **已修**：
+  - `search()` 搜索后调 `_select_page_limit(200)`，并回传 `page_limit` /
+    `total_records`，让调用方看见分页状态；
+  - `select_datasheets()` 改成逐页翻找（`max_pages=20` 封顶），返回
+    `{selected, wanted, pages_walked, found, missing}`；
+  - `sync_up_via_api(row_ids=...)` 支持显式传完整清单，`apply_plan` 现在
+    按计划的 rowid 全量传，不再依赖"页面上勾了哪些"。
+- **未修（已知限制）**：搜索回显的虚拟化渲染上限约 60 行/页。
+  影响面：`soldeazy_search_datasheet` 的 `limit` 再大也拿不到超过一页的行；
+  需要全量时走 `read_datasheet_values`（导出通道）。已在代码注释里写明。
+
+### 6. FUN 实机小批量验证结果（2026-11-11，已获批准）
+
+计划 `price-20261111-064925`：2 个 SKU（`MCPSKU001`、`XS2E8-Black-2B`）共 10 行，
++0.5 改价 → 还原原值。**最终对账 10/10，价格已回到原值**（19.99 / 21.9），
+审计 `success=true`。FUN 数据无残留改动。
+
+过程中暴露并修掉 3 个真 bug：
+
+1. **页面导出弹层不可靠**：FUN 上点「导出」后 `#jqizoo` 不出现（第一次 change_price
+   就死在这）。已把默认导出通道切到 cookie/API（`export_via_api`），实测一次拿全
+   7075 行 / 1637 个 rowid；页面通道保留为 `SOLDEAZY_EXPORT_CHANNEL=page` 的回退。
+2. **`include_unlisted=true` 之前是假的**：页面状态 select 会沿用上次的「已刊登」，
+   不清档的话 include_unlisted 实际仍按已刊登过滤。现在显式清回空（=全部）。
+3. **search 里调每页条数会把导出按钮的点击绑定弄坏**（AJAX 重拉竞态）。
+   现在 search 只读档位不改档；需要大页的勾选动作在 `select_datasheets` 里自己调，
+   并且所有页面 evaluate 都套了导航竞态重试（`_eval_with_retry`）。
+
+另外把「勾选失败」从 problems 降为 notes：上传已经发生后，勾选崩溃不该把链路
+掐在"已改价未同步"的中间态；同步接口本来就按完整清单传 `table_row_ids`。
+
+**TODO #1（warnings 分支）仍未在实机触发**：FUN 的 BULK SYNC 从来不产生工序任务
+（历史 25 个任务全是 DSUploadTask），`_await_latest_job` 拿不到 job，notes 无从附加；
+`synced=ok` 只代表同步接口返回 200。该分支目前只有单测覆盖，等出现"有同步任务且
+条数对不上"的账号才能实机验证。
+
+待办：
+- [ ] 第 1 条的真实复现：等 FUN 再有未刊登数据表时验证 `warnings` 生效。
+- [x] 默认 `limit=50` 与 4000 字符闸门自相矛盾 —— 已把默认降到 20，
+      `plan_changes` 明细 20 条、`reconcile` 明细各 10 条；新增测试守住
+      「默认参数必须能通过闸门」。

@@ -134,6 +134,121 @@ def test_shop_guard_flags_export_from_other_shop() -> None:
     assert any("没有计划所属" in item for item in problems)
 
 
+def test_shop_guard_accepts_long_and_short_shop_names() -> None:
+    """导出列是短名 FUN、页面是长名 EBAY FUN，不该因为格式不同就中止上传。"""
+
+    from ebay_mcp_server.providers.soldeazy_apply import shop_problems
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
+
+    matrix = [
+        ["dsheet_row_id", "dsheet_shop_initial", "dsheet_var_parent_sku"],
+        ["Row ID", "Sales channel", "P.SKU"],
+        ["4512957", "EBAY FUN", "JJPC0029"],
+    ]
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+    )
+    assert shop_problems(plan, matrix, {"id": "159", "name": "FUN"}) == []
+
+
+def test_shop_scope_problem_matches_by_plan_shop_name():
+    from ebay_mcp_server.providers.soldeazy_apply import shop_scope_problem
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
+
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US", shop={"id": "159", "name": "FUN"},
+        created_at="x", items=[],
+    )
+    assert shop_scope_problem(plan, ["FUN"]) == ""          # 导出列是短名
+    assert shop_scope_problem(plan, ["EBAY FUN"]) == ""     # 搜索结果里是长名
+    assert "FUN" in shop_scope_problem(plan, ["EBAY TAY"])
+    # 拿不到店铺信息时不下结论，交给原来的逐行比对
+    assert shop_scope_problem(plan, []) == ""
+    assert shop_scope_problem(plan, None) == ""
+
+
+def test_reconcile_aborts_when_export_is_from_another_shop(tmp_path):
+    """没设 active_shop 时导出的是平台默认店铺，不能据此判"改动没生效"。"""
+
+    import asyncio
+
+    from ebay_mcp_server.providers.soldeazy_apply import reconcile
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="price-shop", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="x",
+        items=[PlanItem("4512957", "JJPC0029", "price", 21.9, 23.0)],
+    )
+
+    class FakeBrowser:
+        last_export_shops = ["EBAY TAY"]
+
+        async def search(self, *args, **kwargs):
+            return {"rows": []}
+
+        async def read_datasheet_values(self, *args, **kwargs):
+            return {}
+
+    report = asyncio.run(reconcile(FakeBrowser(), plan, tmp_path))
+
+    assert report["ok"] is False
+    assert report["absent_total"] == 0        # 不是"查不到"
+    assert "对账中止" in report["error"]
+    assert report["shops_in_export"] == ["EBAY TAY"]
+    assert (tmp_path / "price-shop.reconcile.json").is_file()
+
+
+def test_reconcile_matches_normally_when_shop_is_right(tmp_path):
+    import asyncio
+
+    from ebay_mcp_server.providers.soldeazy_apply import reconcile
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="price-ok", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="x",
+        items=[PlanItem("4512957", "JJPC0029", "price", 21.9, 23.0)],
+    )
+
+    class FakeBrowser:
+        last_export_shops = ["EBAY FUN"]
+
+        async def search(self, *args, **kwargs):
+            return {"rows": []}
+
+        async def read_datasheet_values(self, *args, **kwargs):
+            return {("4512957", "JJPC0029"): {"price": 23.0, "qty": 50}}
+
+    report = asyncio.run(reconcile(FakeBrowser(), plan, tmp_path))
+
+    assert report["ok"] is True
+    assert report["matched"] == 1
+    assert "error" not in report
+
+
+def test_compact_report_reports_shop_mistake_instead_of_zero_mismatch():
+    from ebay_mcp_server.providers.soldeazy_change import compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US", shop={"id": "159", "name": "FUN"},
+        created_at="x", items=[PlanItem("1", "S", "price", 21.9, 23.0)],
+    )
+    reconcile = {
+        "ok": False, "matched": 0, "items": 1, "mismatched_total": 0, "absent_total": 0,
+        "error": "对账中止：导出的是 ['EBAY TAY']，计划属于 FUN。",
+    }
+    report = compact_plan_report(
+        plan, applied={"ok": True, "queue": {"ok": True}}, reconcile=reconcile, kind="price"
+    )
+
+    assert report["ok"] is False
+    assert any("对账中止" in p for p in report["problems"])
+    assert not any("对账不一致" in p for p in report["problems"])
+
+
 def test_apply_plan_signature_has_sync_switches():
     import inspect
 

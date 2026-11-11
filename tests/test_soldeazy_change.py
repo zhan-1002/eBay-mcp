@@ -102,6 +102,71 @@ def test_compact_report_omits_empty_extras():
     assert "unmatched_targets" not in report
 
 
+def test_compact_report_caps_skipped_packs():
+    """200 个基础 SKU 各挂 3 个套装时，判决不能跟着涨到 2700 token。"""
+
+    import json
+
+    from ebay_mcp_server.providers.soldeazy_change import (
+        MAX_PACKS,
+        compact_plan_report,
+    )
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="price-p", kind="price", site="US",
+        shop={"id": "159", "name": "FUN"}, created_at="2026-11-09",
+        items=[PlanItem(str(4523000 + i), f"SKU{i:04d}", "price", 21.9, 23.0) for i in range(200)],
+    )
+    packs = {
+        f"SKU{i:04d}": [f"SKU{i:04d} x2", f"SKU{i:04d} x4", f"SKU{i:04d}US"]
+        for i in range(200)
+    }
+
+    report = compact_plan_report(
+        plan,
+        applied={"ok": True, "sync": "ok", "queue": {"ok": True}},
+        reconcile={"ok": True, "matched": 200, "items": 200},
+        kind="price",
+        extra={"skipped_packs": packs},
+    )
+
+    assert len(report["skipped_packs"]) == MAX_PACKS
+    assert report["skipped_packs_total"] == 200
+    assert report["ok"] is True
+    # 截断后仍是一个小返回（原样倒出来是 11000+ 字符）
+    assert len(json.dumps(report, ensure_ascii=False)) < 1000
+
+
+def test_compact_report_drops_empty_skipped_packs():
+    from ebay_mcp_server.providers.soldeazy_change import compact_plan_report
+    from ebay_mcp_server.providers.soldeazy_plan import ChangePlan, PlanItem
+
+    plan = ChangePlan(
+        plan_id="p", kind="price", site="US", shop={}, created_at="x",
+        items=[PlanItem("1", "S", "price", 1.0, 2.0)],
+    )
+    report = compact_plan_report(
+        plan, applied={"ok": True, "queue": {"ok": True}, "sync_problems": []},
+        reconcile={"ok": True, "matched": 1, "items": 1}, kind="price",
+        extra={"skipped_packs": {}},
+    )
+    assert "skipped_packs" not in report
+    assert "skipped_packs_total" not in report
+
+
+def test_cap_packs_keeps_small_dicts_intact():
+    from ebay_mcp_server.providers.soldeazy_change import cap_packs
+
+    assert cap_packs({}) == {}
+    assert cap_packs(None) == {}
+
+    small = {"A": ["A x2"], "B": ["B x4"]}
+    capped = cap_packs(small)
+    assert capped["skipped_packs"] == small
+    assert capped["skipped_packs_total"] == 2
+
+
 async def _async_shop(shop):
     return {"id": "159", "name": "FUN"}
 
