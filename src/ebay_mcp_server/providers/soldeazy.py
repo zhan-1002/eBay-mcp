@@ -264,6 +264,21 @@ def launch_error(
     )
 
 
+def looks_logged_in(html: str) -> bool:
+    """用页面 HTML 判断 cookie 是否还有效（不开浏览器的轻量校验）。
+
+    登录页有密码输入框；已登录的数据表页有 ``#tbl_dSheet``。
+    两个标记都不在时保守返回 False。
+    """
+
+    lowered = html.lower()
+    if "tbl_dsheet" in lowered:
+        return True
+    if 'type="password"' in lowered or 'name="password"' in lowered:
+        return False
+    return False
+
+
 class SoldeazyBrowser:
     """Drive the Soldeazy datasheet UI with one persistent browser profile."""
 
@@ -358,6 +373,12 @@ class SoldeazyBrowser:
             "session_file": str(session_file) if session_file else "",
             "session_file_exists": bool(session_file and session_file.is_file()),
             "session_cookie_count": session_cookies,
+            # 不开浏览器问一次站点：cookie 还活着吗。文件不存在直接 False，不发请求。
+            "session_valid": (
+                await self.session_alive_http()
+                if session_file and session_file.is_file()
+                else False
+            ),
             "session_save_error": self.session_save_error,
             "write_enabled": self.settings.soldeazy_write_enabled,
             "browser_open": self._page is not None,
@@ -487,6 +508,51 @@ class SoldeazyBrowser:
 
     def _session_file(self) -> Path:
         return self.profile_dir / "session_cookies.json"
+
+    def _cookie_dict(self) -> dict[str, str]:
+        """读落盘 cookie，变成 {name: value}。没有/坏了就返回空。"""
+
+        path = self._session_file() if self.profile_dir else None
+        if path is None or not path.is_file():
+            return {}
+        try:
+            cookies = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return {
+            str(item.get("name")): str(item.get("value"))
+            for item in cookies
+            if isinstance(item, dict) and item.get("name")
+        }
+
+    def _http_client(self) -> Any:
+        """不依赖浏览器的 HTTP 客户端：cookie 直接来自落盘文件。
+
+        导出/上传/工序查询这些步骤本来就只有"cookie + 表单"两样东西，
+        之前借 page.context.request 只是借 cookie。浏览器被空闲释放后，
+        这些步骤仍能继续跑，不必重新抢 profile 锁。
+        """
+
+        import httpx
+
+        return httpx.AsyncClient(
+            cookies=self._cookie_dict(),
+            headers={"User-Agent": DESKTOP_UA},
+            follow_redirects=True,
+            timeout=180.0,
+        )
+
+    async def session_alive_http(self) -> bool:
+        """不开浏览器，用落盘 cookie 问一次站点：登录态还活着吗。"""
+
+        if not self._cookie_dict():
+            return False
+        async with self._http_client() as client:
+            try:
+                response = await client.get(f"{self.base_url}{LIST_PATH}")
+            except Exception:  # noqa: BLE001 - 网络不通当作失效
+                return False
+        return looks_logged_in(response.text)
 
     async def _save_session(self) -> None:
         """把 cookie 落盘（含会话级 _ht_ses_），重启后仍能复用登录态。
@@ -1121,14 +1187,14 @@ class SoldeazyBrowser:
         会话下点「导出」后不出现（FUN 实机复现），而本通道的筛选参数直接取自
         最近一次 search（`_last_query` / `_last_site` / `_last_status_value` /
         `_last_date_value`），行集与计划一致，且实测一次拿到全量 7075 行。
+
+        **浏览器被空闲释放后本通道仍可工作**：没有 context 时改用落盘 cookie
+        的独立 HTTP 客户端，不再抢 profile 锁。cookie 失效会明确报
+        ``SOLDEAZY_LOGIN_REQUIRED``，而不是让用户猜。
         """
 
-        page = await self._ensure_page()
         shop_id = (self.active_shop or {}).get("id", "")
         site_code = SITE_CODES.get((self._last_site or "").upper(), "")
-        if not (page.url or "").startswith(self.base_url):
-            await self._goto(f"{self.base_url}{LIST_PATH}")
-            await asyncio.sleep(1.0)
 
         base_form = {
             "second_mode": "dsheet_list",
@@ -1153,18 +1219,36 @@ class SoldeazyBrowser:
             "mode": "dsheet_datatable",
             "bulk_option": "whole_result",
         }
-        response = await page.context.request.post(
-            f"{self.base_url}/app/soldeazy/datasheet",
-            form={**base_form, **extra},
-            timeout=180_000,
-        )
-        body = await response.body()
+        url = f"{self.base_url}/app/soldeazy/datasheet"
+        if self._context is not None:
+            page = await self._ensure_page()
+            if not (page.url or "").startswith(self.base_url):
+                await self._goto(f"{self.base_url}{LIST_PATH}")
+                await asyncio.sleep(1.0)
+            response = await page.context.request.post(
+                url, form={**base_form, **extra}, timeout=180_000
+            )
+            body = await response.body()
+            status = response.status
+        else:
+            # 浏览器已被空闲释放（或本进程根本没开过）：用落盘 cookie 直接发请求
+            if not await self.session_alive_http():
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "没有可用登录态：cookie 缺失或已失效，且浏览器未启动。"
+                    "先调 soldeazy_open_login 登录一次（或等占用 profile 的会话释放）。",
+                    details={"session_file": str(self._session_file())},
+                )
+            async with self._http_client() as client:
+                http_response = await client.post(url, data={**base_form, **extra})
+            body = http_response.content
+            status = http_response.status_code
         if not body or body[:2] != b"PK":
             raise EbayMcpError(
                 "SOLDEAZY_EXPORT_API_FAILED",
                 "cookie 导出没有返回 xlsx",
                 details={
-                    "status": response.status,
+                    "status": status,
                     "head": body[:160].decode("utf-8", "ignore") if body else "",
                     "form": extra,
                 },

@@ -307,6 +307,27 @@
 - **实时共用仍只有一条路**：`ebay-mcp-server --transport sse` 常驻单例。
 - 注意：空闲释放只对**跑新代码的进程**生效；11-09 那串旧服务进程必须重启才受益。
 
+### 8. Cookie 优先：能不开浏览器就不开（2026-11-11 起）
+
+落盘的 `session_cookies.json` 就是完整登录态，很多步骤只有"cookie + 表单"两样东西，
+之前借 `page.context.request` 只是借 cookie。现在：
+
+- `session_alive_http()`：不开浏览器问一次站点，cookie 还活着吗；
+  `soldeazy_status` 回显 `session_valid`。
+- `export_via_api()`：没有浏览器 context 时改用独立 httpx 客户端 + 落盘 cookie。
+  **实机验证**：全程 `_context=None`，导出 7075 行 / 1637 rowid，与浏览器通道逐行一致。
+  cookie 失效时明确报 `SOLDEAZY_LOGIN_REQUIRED`。
+- 效果：浏览器被空闲释放后，导出/对账读取仍能继续，不必重新抢锁。
+
+**仍依赖浏览器 DOM 的**（下一批要搬走的）：
+- `search()`：表单操作 + 读结果表 → 可改成 HTTP POST + 解析返回 HTML（`parse_rows` 现成）；
+- `sync_up_via_api` 的 `sql_cache_token`：在搜索页 HTML 里，search 改 HTTP 后顺带解决；
+- `select_datasheets`：纯 UI 勾选，同步接口已按完整清单传参后它只是尽力而为；
+- `upload_via_api` / `queue_jobs` / `queue_result`：同 export 的模式，换 httpx 即可，
+  待下次批准的 FUN 写入时顺带验证。
+
+搬完之后**正常读写全程不碰浏览器**，profile 锁只在"cookie 失效要重新登录"时才出现。
+
 待办：
 - [ ] 第 1 条的真实复现：等 FUN 再有未刊登数据表时验证 `warnings` 生效。
 - [x] 默认 `limit=50` 与 4000 字符闸门自相矛盾 —— 已把默认降到 20，

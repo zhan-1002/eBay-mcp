@@ -245,6 +245,64 @@ def test_launch_error_tells_profile_lock_apart_from_missing_browser():
     assert missing.details["tried"] == ["chrome"]
 
 
+def test_looks_logged_in_reads_the_two_markers() -> None:
+    from ebay_mcp_server.providers.soldeazy import looks_logged_in
+
+    assert looks_logged_in('<table id="tbl_dSheet"></table>') is True
+    assert looks_logged_in('<form><input type="password" name="pwd"></form>') is False
+    assert looks_logged_in("<html>whatever</html>") is False
+
+
+def test_cookie_dict_reads_the_session_file(tmp_path) -> None:
+    import json
+    from dataclasses import replace
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "session_cookies.json").write_text(
+        json.dumps([{"name": "a", "value": "1"}, {"name": "_ht_ses_", "value": "x"}, "junk"]),
+        encoding="utf-8",
+    )
+    browser = SoldeazyBrowser(replace(Settings.load(), soldeazy_profile_dir=str(profile)))
+    assert browser._cookie_dict() == {"a": "1", "_ht_ses_": "x"}
+
+
+def test_session_alive_http_is_false_without_cookies(tmp_path) -> None:
+    import asyncio
+    from dataclasses import replace
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    browser = SoldeazyBrowser(
+        replace(Settings.load(), soldeazy_profile_dir=str(tmp_path / "empty"))
+    )
+    assert asyncio.run(browser.session_alive_http()) is False
+
+
+def test_export_without_browser_and_without_cookies_fails_loudly(tmp_path) -> None:
+    """没开浏览器 + 没 cookie：必须明确说要登录，不能静默导出一份错的。"""
+
+    import asyncio
+    from dataclasses import replace
+
+    import pytest
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.errors import EbayMcpError
+    from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+
+    browser = SoldeazyBrowser(
+        replace(Settings.load(), soldeazy_profile_dir=str(tmp_path / "empty"))
+    )
+    with pytest.raises(EbayMcpError) as caught:
+        asyncio.run(browser.export_via_api(tmp_path / "x.xlsx"))
+    assert caught.value.code == "SOLDEAZY_LOGIN_REQUIRED"
+
+
 def test_idle_release_closes_browser_after_idle() -> None:
     """空闲到点就关浏览器、交还 profile 锁；cookie 由 close() 落盘。"""
 
