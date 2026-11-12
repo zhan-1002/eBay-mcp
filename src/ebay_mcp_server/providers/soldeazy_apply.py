@@ -24,6 +24,13 @@ QTY = "qty"
 TOLERANCE = 0.005
 
 
+#: 等同步工序任务的轮数（每轮 6 秒）。未刊登计划平台上基本不产生同步任务
+#: （FUN 实机：历史 25 个任务全是 DSUploadTask），空等 10 轮就是白烧 60 秒；
+#: 2 轮足够抓住"任务真的出现了"的情况。
+SYNC_JOB_ATTEMPTS = 10
+SYNC_JOB_ATTEMPTS_UNLISTED = 2
+
+
 def _num(value: Any) -> float | None:
     try:
         return float(str(value).replace(",", "").strip())
@@ -527,7 +534,12 @@ async def apply_plan(
             sync_result["table_row_ids_total"] = len(ids)
             sync_result["table_row_ids_truncated"] = len(ids) > 20
         sync_queue = await _await_latest_job(
-            browser, expected_datasheets, tolerate_mismatch=not plan.only_listed
+            browser,
+            expected_datasheets,
+            tolerate_mismatch=not plan.only_listed,
+            attempts=(
+                SYNC_JOB_ATTEMPTS_UNLISTED if not plan.only_listed else SYNC_JOB_ATTEMPTS
+            ),
         )
         if sync_queue:
             sync_result["queue"] = sync_queue

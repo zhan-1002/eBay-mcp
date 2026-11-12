@@ -152,6 +152,19 @@ def test_shop_guard_accepts_long_and_short_shop_names() -> None:
     assert shop_problems(plan, matrix, {"id": "159", "name": "FUN"}) == []
 
 
+def test_unlisted_plans_wait_fewer_rounds_for_the_sync_job():
+    """未刊登计划平台上基本不产生同步任务：空等轮数必须比已刊登少。"""
+
+    import inspect
+
+    from ebay_mcp_server.providers import soldeazy_apply as mod
+
+    assert mod.SYNC_JOB_ATTEMPTS_UNLISTED == 2
+    assert mod.SYNC_JOB_ATTEMPTS == 10
+    src = inspect.getsource(mod.apply_plan)
+    assert "SYNC_JOB_ATTEMPTS_UNLISTED if not plan.only_listed" in src
+
+
 def test_shop_scope_problem_matches_by_plan_shop_name():
     from ebay_mcp_server.providers.soldeazy_apply import shop_scope_problem
     from ebay_mcp_server.providers.soldeazy_plan import ChangePlan
