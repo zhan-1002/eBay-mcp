@@ -664,6 +664,71 @@ def test_sync_up_via_api_accepts_explicit_row_ids():
     assert "row_ids" in sig.parameters
 
 
+def test_search_one_by_one_merges_dedupes_and_reports_missing(monkeypatch):
+    """平台合并查询会漏行：逐条搜再合并，重复行去重、空 SKU 明报。"""
+
+    import asyncio
+
+    from ebay_mcp_server import server
+
+    calls: list[str] = []
+
+    async def fake_search(query, site, only_listed=True):
+        calls.append(query)
+        if "AAA" in query:
+            return {"columns": ["Row ID"], "rows": [
+                {"rowid": "1", "sku": "AAA", "shop": "FUN"},
+                {"rowid": "2", "sku": "AAAUS", "shop": "FUN"},
+            ]}
+        if "BBB" in query:
+            # 与 AAA 的变体行重复，合并时要去掉
+            return {"columns": ["Row ID"], "rows": [
+                {"rowid": "2", "sku": "AAAUS", "shop": "FUN"}
+            ]}
+        return {"columns": ["Row ID"], "rows": []}
+
+    monkeypatch.setattr(server.soldeazy, "search", fake_search)
+    monkeypatch.setattr(server.soldeazy, "active_shop", {"id": "159", "name": "FUN"})
+
+    data = asyncio.run(
+        server._search_one_by_one(["AAA", "BBB", "CCC"], "US", include_unlisted=False)
+    )
+    assert calls == ["*AAA", "*BBB", "*CCC"]
+    assert data["row_count"] == 2
+    assert data["search_mode"] == "one_by_one"
+    assert data["skus_with_no_rows"] == ["CCC"]
+    assert data["skus_with_no_rows_total"] == 1
+
+
+def test_search_datasheet_one_by_one_routes_around_combined_query(monkeypatch):
+    import asyncio
+
+    from ebay_mcp_server import server
+
+    calls: list[str] = []
+
+    async def fake_search(query, site, only_listed=True):
+        calls.append(query)
+        return {"columns": [], "rows": [
+            {"rowid": "1", "sku": query.strip("*"), "shop": "FUN"}
+        ]}
+
+    monkeypatch.setattr(server.soldeazy, "search", fake_search)
+    monkeypatch.setattr(server.soldeazy, "active_shop", {"id": "159", "name": "FUN"})
+
+    result = asyncio.run(
+        server.soldeazy_search_datasheet(skus=["AAA", "BBB"], one_by_one=True)
+    )
+    assert calls == ["*AAA", "*BBB"]
+    assert "search_notice" not in result["data"]
+    assert result["data"]["search_mode"] == "one_by_one"
+
+    calls.clear()
+    result = asyncio.run(server.soldeazy_search_datasheet(skus=["AAA", "BBB"]))
+    assert calls == ["*AAA *BBB"]                     # 默认仍是合并查询
+    assert "search_notice" in result["data"]           # 但必须带漏行提醒
+
+
 def test_expensive_tools_require_confirmation_flag():
     import inspect
 

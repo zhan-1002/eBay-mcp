@@ -25,7 +25,7 @@ from ebay_mcp_server.contracts import (
 from ebay_mcp_server.errors import EbayMcpError, tool_error
 from ebay_mcp_server.gateway import ApiResponse, EbayGateway
 from ebay_mcp_server.providers import build_sales_provider
-from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser
+from ebay_mcp_server.providers.soldeazy import SoldeazyBrowser, _shop_scope_hint
 
 # 2026-11-09 停用旧的「推导式」改价/改库存链路（预览 → 令牌 → 写入）。
 # 那套规则会按价格倍数猜件数、抬到最低售价、只涨不降，且会误改套装；
@@ -695,6 +695,49 @@ def _output_too_large(payload: dict[str, Any], *, allow: bool = False) -> dict[s
     )
 
 
+async def _search_one_by_one(
+    skus: list[str], site: str, *, include_unlisted: bool
+) -> dict[str, Any]:
+    """逐条搜索再合并：平台合并查询实测会漏个别数据表（2026-11-12 生产确认），
+    单条搜索不会。按 (rowid, sku) 去重；搜不到行的 SKU 单独列出来，
+    让调用方看见缺口而不是安静地少几行。
+    """
+
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    missing: list[str] = []
+    columns: list[str] = []
+    for sku in skus:
+        found = await soldeazy.search(
+            _search_text([sku], ""), site, only_listed=not include_unlisted
+        )
+        columns = columns or list(found.get("columns") or [])
+        rows = found.get("rows") or []
+        if not rows:
+            missing.append(str(sku))
+        for row in rows:
+            key = (str(row.get("rowid") or ""), str(row.get("sku") or ""))
+            if key not in seen:
+                seen.add(key)
+                merged.append(row)
+
+    shop_name = (soldeazy.active_shop or {}).get("name") or ""
+    data: dict[str, Any] = {
+        "site": site,
+        "shop": shop_name,
+        "search": " ".join(str(sku) for sku in skus),
+        "search_mode": "one_by_one",
+        "columns": columns,
+        "row_count": len(merged),
+        "rows": merged,
+        **_shop_scope_hint(shop_name, merged),
+    }
+    if missing:
+        data["skus_with_no_rows"] = missing[:10]
+        data["skus_with_no_rows_total"] = len(missing)
+    return data
+
+
 @mcp.tool(annotations=READ_ONLY_NETWORK)
 async def soldeazy_search_datasheet(
     site: str = "",
@@ -705,6 +748,7 @@ async def soldeazy_search_datasheet(
     with_title: bool = False,
     include_unlisted: bool = False,
     allow_large_output: bool = False,
+    one_by_one: bool = False,
 ) -> dict[str, Any]:
     """Read datasheet rows (Row ID, SKU, price, postage, qty) for one site.
 
@@ -722,18 +766,36 @@ async def soldeazy_search_datasheet(
     **返回条数默认上限 20 条**（``limit``，最多 200）。生产账号一次可能几千条，
     全量返回会在对话里吃掉几十万 token；确实需要全量时用 ``offset`` 翻页。
     ``with_title`` 默认关闭——标题是单行最占字的部分。
+
+    ``one_by_one=true`` 时改成**逐条搜索再合并**（按 rowid+sku 去重）：
+    平台的多词合并搜索实测会静默漏数据表（2026-11-12 生产确认，
+    即影刀时代挂着"待确认"的 B2），核对类用途请用这个或空搜索取全量。
     """
     # 空查询是合法的：等于「这个渠道账号下的全部数据表」，
     # 计划预览内部就是这么读的，工具层不该比它还严。
-    query = _search_text(skus, search_text)
     try:
-        data = await soldeazy.search(query, site, only_listed=not include_unlisted)
+        combined = not (one_by_one and skus and not (search_text or "").strip())
+        if combined:
+            query = _search_text(skus, search_text)
+            data = await soldeazy.search(query, site, only_listed=not include_unlisted)
+        else:
+            query = " ".join(str(sku) for sku in skus)
+            data = await _search_one_by_one(skus, site, include_unlisted=include_unlisted)
         rows = data.get("rows") or []
         payload = {
             **{k: v for k, v in data.items() if k != "rows"},
             **_cap_rows(rows, limit=limit, offset=offset, with_title=with_title),
             **_site_hint(site),
         }
+        if combined and len(query.split()) > 1:
+            # 2026-11-12 生产实测：平台的多词合并搜索/导出会漏个别数据表
+            # （单查、按 ID 查都在，合并结果里没有）。核对类用途请逐条搜，
+            # 或直接空搜索拿全量再本地过滤——写入链路本来就是这么做的。
+            payload["search_notice"] = (
+                "多个 SKU 合并搜索在平台侧实测会漏个别数据表"
+                "（单条/按 ID 搜索能查到）。核对请传 one_by_one=true 逐条搜索，"
+                "或空搜索取全量后本地过滤。"
+            )
         blocked = _output_too_large(payload, allow=allow_large_output)
         if blocked is not None:
             return blocked
