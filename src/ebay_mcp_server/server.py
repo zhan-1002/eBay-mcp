@@ -1353,7 +1353,7 @@ async def soldeazy_change_price(
     targets: dict[str, float],
     site: str = "",
     shop: str = "",
-    dry_run: bool = False,
+    dry_run: bool = True,
     sync_price: bool = True,
     verbose: bool = False,
     include_unlisted: bool = False,
@@ -1361,6 +1361,10 @@ async def soldeazy_change_price(
     targets_file: str = "",
 ) -> dict[str, Any]:
     """**一步改价**：起草 → 冻结 → 执行 → 对账，只返回判决。
+
+    **默认 `dry_run=true` 只出预览**（sample 5 条 + skipped_packs + 计数，不写盘、
+    不落计划文件）；人工/调用方核对后**显式传 `dry_run=false`** 才真正执行。
+    两次调用是刻意的人工确认点：生产账号的一次误改没有撤销按钮。
 
     这是推荐入口。旧的四个分步工具仍然可用，但每一步都要把明细推进对话，
     生产账号几千行时会把 token 烧光（实测累积到 6000 万）。
@@ -1372,7 +1376,6 @@ async def soldeazy_change_price(
     `site` 可省略：**不传就是全部站点**（不勾选站点即全部），一次搜索/导出/上传
     覆盖全部站点；返回里带 `site_notice` 告知范围。这样用户不说明站点时
     不必先反问一轮，省一整次往返的 token。
-    `dry_run=True` 只出计划不写盘。
     """
 
     try:
@@ -1432,13 +1435,15 @@ async def soldeazy_change_stock(
     targets: dict[str, float],
     site: str = "",
     shop: str = "",
-    dry_run: bool = False,
+    dry_run: bool = True,
     verbose: bool = False,
     include_unlisted: bool = False,
     allow_large_output: bool = False,
     targets_file: str = "",
 ) -> dict[str, Any]:
     """**一步改库存**：起草 → 冻结 → 执行 → 对账，只返回判决。
+
+    **默认 `dry_run=true` 只出预览**；核对后显式传 `dry_run=false` 才真正执行。
 
     `targets` 是 `{母体SKU: 数量}`，会写进该母体下的所有行
     （母体行 + 全部子体行），数量是绝对值。

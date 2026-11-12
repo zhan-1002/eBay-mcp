@@ -147,14 +147,16 @@ soldeazy_change_price(site=US, targets={JJPC0029: 23.0}, include_unlisted=True)
 这个开关会写进计划文件（only_listed 字段），执行和对账沿用同一个值，
 不会出现按已刊登算、按全部传的错位。
 
-### 推荐入口：一步到位（省 token）
+### 推荐入口：预览 → 执行（省 token，带人工确认）
 
 `python
+# 第 1 次：预览（dry_run 默认 true）——只回计数 + sample 5 条 + 跳过的套装，不写盘
 soldeazy_change_price(site=US, targets={JJPC0029: 23.0})
-soldeazy_change_stock(site=US, targets={排插-P: 50})
+# 第 2 次：核对 sample 后显式执行
+soldeazy_change_price(site=US, targets={JJPC0029: 23.0}, dry_run=false)
 `
 
-一次调用内部完成 **起草 → 冻结 → 执行 → 上传 → 同步 → 对账**，
+执行那一次调用内部完成 **起草 → 冻结 → 执行 → 上传 → 同步 → 对账**，
 只返回判决：
 
 `json
@@ -163,9 +165,11 @@ soldeazy_change_stock(site=US, targets={排插-P: 50})
  stage: done, problems: [], problems_total: 0}
 `
 
-**约 90 token，与改动条数无关**（200 条和 2557 条都是 90 出头）。
+**判决约 70-90 token，与改动条数无关**（200 条和 2557 条都是 90 出头）；
+预览多花的那一次调用约 100 token，买的是"写生产前有人看过一眼"。
+2026-11-12 起 `dry_run` 默认 `true`：一次调用就写生产的路已经堵上。
 
-失败时只回 problems（最多 10 条）+ 总数，需要逐条明细才传 erbose=true。
+失败时只回 problems（最多 10 条）+ 总数，需要逐条明细才传 verbose=true。
 
 #### 为什么要有这个入口
 
@@ -175,8 +179,7 @@ soldeazy_change_stock(site=US, targets={排插-P: 50})
 问题不在单次返回大，而在**把校验责任推给了模型**。现在校验留在服务端，
 模型只接收结论。
 
-分步工具仍然保留（plan_changes / confirm_plan / pply_plan / 
-econcile_plan），
+分步工具仍然保留（plan_changes / confirm_plan / apply_plan / reconcile_plan），
 适合需要人工逐步确认的场景；批量作业请用一步入口。
 
 #### 工具面：每个请求都要重发的固定成本

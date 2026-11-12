@@ -199,6 +199,9 @@ def test_new_write_tools_default_to_dry_run():
         server.soldeazy_create_datasheet,
         server.soldeazy_delete_datasheet,
         server.soldeazy_upload_photo,
+        # 2026-11-12：一步改价/改库存也翻成默认预览，写入必须显式 dry_run=false
+        server.soldeazy_change_price,
+        server.soldeazy_change_stock,
     ):
         assert inspect.signature(tool).parameters["dry_run"].default is True
 

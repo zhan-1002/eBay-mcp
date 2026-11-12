@@ -203,9 +203,9 @@ async def run_change(
         }
 
     plan = make_plan(kind, site, picked, items, only_listed=only_listed)
-    write_draft(plan_dir, plan)
 
     if dry_run:
+        # 预览不落盘：计划文件是"将要执行"的承诺，没确认前不留痕迹
         preview = {
             "ok": True,
             "dry_run": True,
@@ -221,6 +221,7 @@ async def run_change(
         preview.update(cap_packs(build_report.get("skipped_packs")))
         return preview
 
+    write_draft(plan_dir, plan)
     frozen = freeze(plan_dir, plan)
     # 冻结后回读一次：确认落盘内容和哈希一致，和分步路径同等强度
     load_verified = deps["load_verified"]

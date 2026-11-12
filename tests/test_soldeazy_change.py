@@ -167,6 +167,54 @@ def test_cap_packs_keeps_small_dicts_intact():
     assert capped["skipped_packs_total"] == 2
 
 
+def test_dry_run_preview_writes_no_plan_file(tmp_path):
+    """预览是"将要执行"的承诺书之前的草稿：没确认前磁盘上不留任何痕迹。"""
+
+    import asyncio
+    import types
+
+    from ebay_mcp_server.providers import soldeazy_change as mod
+    from ebay_mcp_server.providers.soldeazy_apply import build_items
+
+    class FakeBrowser:
+        async def read_datasheet_values(self, site, query="", **kwargs):
+            return {
+                ("4512957", "JJPC0029"): {
+                    "rowid": "4512957", "parent": "JJPC0029",
+                    "sku": "JJPC0029", "qty": 100, "price": 21.9,
+                }
+            }
+
+    wrote: list[str] = []
+
+    async def run():
+        return await mod.run_change(
+            kind="price", site="US", targets={"JJPC0029": 23.0}, shop="",
+            dry_run=True, sync=True, sync_price=True, sync_quantity=False,
+            verbose=False, only_listed=True,
+            deps={
+                "build_items": build_items,
+                "make_plan": lambda *a, **k: types.SimpleNamespace(
+                    plan_id="price-x", items=[]
+                ),
+                "write_draft": lambda *a, **k: wrote.append("draft"),
+                "freeze": lambda *a, **k: wrote.append("freeze"),
+                "load_verified": lambda *a, **k: (None, ""),
+                "apply_plan": None,
+                "reconcile": None,
+                "plan_dir": tmp_path,
+                "browser": FakeBrowser(),
+                "resolve_shop": _async_shop,
+            },
+        )
+
+    result = asyncio.run(run())
+    assert result["dry_run"] is True
+    assert result["items"] == 1
+    assert wrote == []                      # 不 draft 也不 freeze
+    assert list(tmp_path.iterdir()) == []   # 目录里一个文件都没有
+
+
 async def _async_shop(shop):
     return {"id": "159", "name": "FUN"}
 

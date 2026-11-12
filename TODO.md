@@ -229,6 +229,7 @@
 | 结果表分页修复 | 每页 25 → 200；勾选逐页翻找；同步按完整清单传 row_ids | `soldeazy._select_page_limit` / `select_datasheets` / `sync_up_via_api` |
 | `ebay_get_sales_history` 明细截断 | 默认每 item 只回 20 条成交（旧版单次 3.3 万字符） | `server.ebay_get_sales_history` |
 | `ebay_validate_titles` 可不回显标题 | `include_titles=false` 省约 8k 字符/次 | `server.ebay_validate_titles` |
+| 一步工具 `dry_run` 默认翻成 `true` | 写入必须"预览 → 显式执行"两次调用；预览不落盘 | `server.soldeazy_change_price/stock`、`soldeazy_change.run_change` |
 | 明文凭据迁到 `.env` | Cert ID / 紫鸟密码 / DeepSeek key 已离开 `config.local.json` | `.env`（不入库） |
 | 数据目录文档对齐 | README 写明本机指到 `.soldeazy-data`，`status` 回显 `plan_dir` | README、`.env.example` |
 
