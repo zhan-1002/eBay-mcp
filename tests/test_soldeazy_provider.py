@@ -444,6 +444,84 @@ def test_search_via_http_builds_the_same_filters_as_the_page(tmp_path, monkeypat
     assert listed["row_count"] == 1
 
 
+def test_session_alive_http_stops_at_first_login_redirect() -> None:
+    """cookie 过期时登录页会自环 302：只能发 1 个请求就判失效，不能跟 20 跳。"""
+
+    import asyncio
+    from dataclasses import replace
+
+    import httpx
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers import soldeazy as mod
+
+    profile = replace(Settings.load(), soldeazy_profile_dir="")
+    browser = mod.SoldeazyBrowser(profile)
+    # 伪造一份 cookie，让校验真的发请求
+    browser._cookie_dict = lambda: {"a": "1"}  # type: ignore[method-assign]
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            302, headers={"location": "/app/soldeazy/login?login_redirect=x"}
+        )
+
+    browser._http_client = lambda **kw: httpx.AsyncClient(  # type: ignore[method-assign]
+        transport=httpx.MockTransport(handler), follow_redirects=kw.get("follow_redirects", False)
+    )
+
+    assert asyncio.run(browser.session_alive_http()) is False
+    assert calls["n"] == 1
+
+
+def test_session_alive_http_true_on_table_marker() -> None:
+    import asyncio
+    from dataclasses import replace
+
+    import httpx
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.providers import soldeazy as mod
+
+    browser = mod.SoldeazyBrowser(replace(Settings.load(), soldeazy_profile_dir=""))
+    browser._cookie_dict = lambda: {"a": "1"}  # type: ignore[method-assign]
+    browser._http_client = lambda **kw: httpx.AsyncClient(  # type: ignore[method-assign]
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, text='<table id="tbl_dSheet"></table>')
+        )
+    )
+    assert asyncio.run(browser.session_alive_http()) is True
+
+
+def test_export_redirect_means_login_required(tmp_path) -> None:
+    """过期 cookie 下导出被 302 到登录页：报 LOGIN_REQUIRED，不是莫名其妙的 PK 错。"""
+
+    import asyncio
+    from dataclasses import replace
+
+    import httpx
+    import pytest
+
+    from ebay_mcp_server.config import Settings
+    from ebay_mcp_server.errors import EbayMcpError
+    from ebay_mcp_server.providers import soldeazy as mod
+
+    browser = mod.SoldeazyBrowser(replace(Settings.load(), soldeazy_profile_dir=str(tmp_path)))
+    browser._cookie_dict = lambda: {"a": "1"}  # type: ignore[method-assign]
+    browser._http_client = lambda **kw: httpx.AsyncClient(  # type: ignore[method-assign]
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                302, headers={"location": "/app/soldeazy/login?x=1"}
+            )
+        )
+    )
+    with pytest.raises(EbayMcpError) as caught:
+        asyncio.run(browser.export_via_api(tmp_path / "x.xlsx"))
+    assert caught.value.code == "SOLDEAZY_LOGIN_REQUIRED"
+
+
 def test_idle_release_closes_browser_after_idle() -> None:
     """空闲到点就关浏览器、交还 profile 锁；cookie 由 close() 落盘。"""
 

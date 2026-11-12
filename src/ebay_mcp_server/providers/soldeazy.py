@@ -701,12 +701,16 @@ class SoldeazyBrowser:
             if isinstance(item, dict) and item.get("name")
         }
 
-    def _http_client(self) -> Any:
+    def _http_client(self, *, follow_redirects: bool = False) -> Any:
         """不依赖浏览器的 HTTP 客户端：cookie 直接来自落盘文件。
 
         导出/上传/工序查询这些步骤本来就只有"cookie + 表单"两样东西，
         之前借 page.context.request 只是借 cookie。浏览器被空闲释放后，
         这些步骤仍能继续跑，不必重新抢 profile 锁。
+
+        **默认不跟重定向**（2026-11-12 实机）：cookie 过期时登录页会自己
+        302 循环，follow_redirects=True 会白跑 20 跳还把日志刷满；
+        现在由各调用点显式判 3xx。
         """
 
         import httpx
@@ -714,21 +718,46 @@ class SoldeazyBrowser:
         return httpx.AsyncClient(
             cookies=self._cookie_dict(),
             headers={"User-Agent": DESKTOP_UA},
-            follow_redirects=True,
+            follow_redirects=follow_redirects,
             timeout=180.0,
         )
 
+    @staticmethod
+    def _redirected_to_login(response: Any) -> bool:
+        """3xx 且 Location 指向登录页 = 服务端不认这份 cookie。"""
+
+        if response.status_code not in {301, 302, 303, 307, 308}:
+            return False
+        return "login" in (response.headers.get("location") or "").lower()
+
     async def session_alive_http(self) -> bool:
-        """不开浏览器，用落盘 cookie 问一次站点：登录态还活着吗。"""
+        """不开浏览器，用落盘 cookie 问一次站点：登录态还活着吗。
+
+        最多跟 3 跳（防登录页自环）；任何一跳指向 login 都直接判失效，
+        一次请求就够，不再靠 TooManyRedirects 兜底。
+        """
 
         if not self._cookie_dict():
             return False
+        url = f"{self.base_url}{LIST_PATH}"
         async with self._http_client() as client:
-            try:
-                response = await client.get(f"{self.base_url}{LIST_PATH}")
-            except Exception:  # noqa: BLE001 - 网络不通当作失效
+            for _ in range(3):
+                try:
+                    response = await client.get(url)
+                except Exception:  # noqa: BLE001 - 网络不通当作失效
+                    return False
+                if response.status_code == 200:
+                    return looks_logged_in(response.text)
+                if self._redirected_to_login(response):
+                    return False
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location") or ""
+                    if not location:
+                        return False
+                    url = location if location.startswith("http") else self.base_url + location
+                    continue
                 return False
-        return looks_logged_in(response.text)
+        return False
 
     async def _save_session(self) -> None:
         """把 cookie 落盘（含会话级 _ht_ses_），重启后仍能复用登录态。
@@ -1564,6 +1593,12 @@ class SoldeazyBrowser:
                 )
             async with self._http_client() as client:
                 http_response = await client.post(url, data={**base_form, **extra})
+            if self._redirected_to_login(http_response):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 已失效（导出被重定向到登录页）。先调 soldeazy_open_login 重新登录。",
+                    details={"status": http_response.status_code},
+                )
             body = http_response.content
             status = http_response.status_code
         if not body or body[:2] != b"PK":
@@ -1819,6 +1854,12 @@ class SoldeazyBrowser:
                         "table_row_ids": ",".join(row_ids),
                         "sql_cache_token": token,
                     },
+                )
+            if self._redirected_to_login(posted):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 已失效（同步被重定向到登录页）。先调 soldeazy_open_login 重新登录。",
+                    details={"status": posted.status_code},
                 )
             text = posted.text or ""
             status = posted.status_code
@@ -2214,6 +2255,12 @@ class SoldeazyBrowser:
         else:
             async with self._http_client() as client:
                 posted = await client.post(url, data={})
+            if self._redirected_to_login(posted):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 已失效（工序查询被重定向到登录页）。先调 soldeazy_open_login 重新登录。",
+                    details={"status": posted.status_code},
+                )
             text = posted.text.lstrip("\ufeff").strip()
         try:
             payload = json.loads(text)
@@ -2239,6 +2286,12 @@ class SoldeazyBrowser:
         else:
             async with self._http_client() as client:
                 posted = await client.post(url, params={"job_id": str(job_id)})
+            if self._redirected_to_login(posted):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 已失效（工序明细被重定向到登录页）。先调 soldeazy_open_login 重新登录。",
+                    details={"status": posted.status_code},
+                )
             html = posted.text
 
         def pick(pattern: str) -> str:
@@ -2395,6 +2448,12 @@ class SoldeazyBrowser:
             async with self._http_client() as client:
                 posted = await client.post(
                     url, files={"filePackage": (path.name, payload, mime)}
+                )
+            if self._redirected_to_login(posted):
+                raise EbayMcpError(
+                    "SOLDEAZY_LOGIN_REQUIRED",
+                    "cookie 已失效（上传被重定向到登录页）。先调 soldeazy_open_login 重新登录。",
+                    details={"status": posted.status_code},
                 )
             status = posted.status_code
             text = posted.text.lstrip("\ufeff").strip()
