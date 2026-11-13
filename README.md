@@ -407,7 +407,8 @@ uv run playwright install chromium
 > 已刊登筛选下为 0 行，必须传 `include_unlisted=true` 才搜得到；
 > `LT`（shop_idx=4432）有真实刊登，**禁止写入**。
 > **搜索一定要显式 `shop`**：不传店铺且没有 active shop 时不做任何过滤，
-> 返回的是平台默认店铺（实测那次是 EBAY TAY），跟 FUN 无关。
+> 返回的是**所有店铺混在一起**的行（不选 = 全选），跟 FUN 无关；
+> 实测第一页恰好全是 EBAY TAY 的行。
 > 详见 `TODO.md` 的「测试纪律」。
 
 ```powershell

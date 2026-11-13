@@ -176,7 +176,7 @@
   都必须传 `include_unlisted=true`，否则会误判成"目标不存在"。
 - **搜索必须显式指定店铺，否则看到的不是你的店铺。**（2026-11-11 踩到）
   `search()` 只有在传了 `shop`（或先 `switch_shop` 设了 `active_shop`）时才加店铺过滤；
-  两样都没有时**不做任何过滤**，返回的是平台默认店铺的数据。
+  两样都没有时**不做任何过滤**——平台语义是「不选 = 全部店铺」，返回所有账号混在一起的行。
   实测：同一个 `US / 已刊登(所有)` 查询，不加过滤返回 25 行全属 **EBAY TAY**；
   显式 `FUN` 返回 **0 行**；显式 `LT` 返回 25 行全属 EBAY LT。
   所以**看完结果先看 `search()["shop"]` 和行内店铺分布**，别假设是 FUN。
@@ -223,7 +223,7 @@
 | 批量目标走文件 `targets_file` | 2000 条入参 10,450 → 5 token | `providers/soldeazy_targets.py` |
 | `include_unlisted` 同步条数只警告 | 未刊登计划不再误判 `ok=false` | `soldeazy_apply._await_latest_job` |
 | 默认 `limit` 与闸门对齐 | 50 行必被拦 → 20 行可直接返回 | `server._cap_rows`、`plan_changes`、`reconcile` |
-| 搜索如实回传店铺范围 | 不再静默返回默认店铺的数据 | `soldeazy._shop_scope_hint` |
+| 搜索如实回传店铺范围 | 不选店铺时标成「全部店铺」，不再被误读成某个店 | `soldeazy._shop_scope_hint` |
 | 对账店铺校验 | 读错店铺不再误报成"改动没生效" | `soldeazy_apply.shop_scope_problem` |
 | 店铺名长短名兼容 | 导出列 `FUN` / 页面 `EBAY FUN` 都认 | `soldeazy_apply._shop_name_matches` |
 | 结果表分页修复 | 每页 25 → 200；勾选逐页翻找；同步按完整清单传 row_ids | `soldeazy._select_page_limit` / `select_datasheets` / `sync_up_via_api` |
@@ -238,7 +238,7 @@
 - **apply 本来就是安全的**：`shop_problems()` 同时校验「活动账号 id」和「导出文件里的店铺名」，
   不一致就在上传前中止。
 - **对账原来没有校验**：`reconcile` 直接 search + export，既不传 `shop` 也不检查导出内容。
-  没设 `active_shop` 时导出的是平台默认店铺，每一行都会被判成"查不到"，
+  没设 `active_shop` 时导出的是全部店铺混在一起的数据；若其中完全不含计划店铺，
   看起来像改动没生效，实际是读错了店。
 - **已修**：`read_datasheet_values` 记录本次导出的店铺名（`last_export_shops`），
   `reconcile` 先调 `shop_scope_problem()`，不一致就**中止并写明原因**，

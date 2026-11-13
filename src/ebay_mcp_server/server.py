@@ -760,7 +760,7 @@ async def soldeazy_search_datasheet(
     省掉先反问用户一轮。返回里会带 ``site_notice`` 告知实际范围。
 
     **店铺一定要传 `shop`**：既没传 `shop`、也没有 `switch_shop` 设过当前账号时，
-    平台不会做店铺过滤，返回的是默认店铺的数据。返回里的 ``shop_filter_applied``
+    平台不会做店铺过滤（平台语义：不选店铺 = 全部店铺），返回的是所有账号混在一起的行。返回里的 ``shop_filter_applied``
     和 ``shops_in_result`` 会如实告诉你实际是哪个店的。
 
     **返回条数默认上限 20 条**（``limit``，最多 200）。生产账号一次可能几千条，

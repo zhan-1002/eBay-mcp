@@ -284,10 +284,11 @@ def shop_problems(plan: ChangePlan, matrix: list[list[Any]], current_shop: dict 
 
 
 def shop_scope_problem(plan: ChangePlan, shops: list[str] | None) -> str:
-    """对账前确认导出的是不是计划所属的店铺。
+    """对账前确认导出的数据里有没有计划所属的店铺。
 
-    没设 active_shop 时 search 不做店铺过滤，导出的是平台默认店铺的数据；
-    这时每一行都会"查不到"，看起来像改动没生效，实际是读错了店。
+    没设 active_shop 时 search 不做店铺过滤（平台语义：不选 = 全部店铺），
+    导出的是所有账号混在一起的数据；只要计划店铺的行在里面就能对账，
+    完全不含计划店铺才说明读错了范围。
     返回非空字符串表示不能据此下结论。
     """
 

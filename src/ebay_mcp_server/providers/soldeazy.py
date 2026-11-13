@@ -183,14 +183,15 @@ def _selector_available() -> bool:
 def _shop_scope_hint(shop: str, records: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """如实说明这次搜索到底按哪个店铺过滤了。
 
-    2026-11-11 踩到的坑：既没传 ``shop`` 也没有 active shop 时，``search`` 不加任何
-    店铺过滤，返回的是平台默认店铺的数据（实测那次是 ``EBAY TAY``）。
-    调用方很容易把它当成自己指定的账号，所以这里把过滤状态和实际店铺都回传。
+    平台语义（2026-11-13 用户纠正）：**店铺不选 = 全选**，返回的是所有渠道账号
+    的数据混在一起（第一页可能恰好全是某个店的行，容易误读成"默认店铺"）。
+    所以没传 shop 时不是"过滤错了"，而是"根本没过滤"——调用方要自己按
+    ``shops_in_result`` / 行内店铺列区分归属。
     """
 
     scoped = bool((shop or "").strip())
     hint: dict[str, Any] = {
-        "shop_filter": shop if scoped else "(未设置：平台默认店铺，可能不是你的账号)",
+        "shop_filter": shop if scoped else "(未选店铺 = 全部店铺)",
         "shop_filter_applied": scoped,
     }
     if records:
@@ -466,7 +467,7 @@ class SoldeazyBrowser:
         self.active_shop: dict[str, str] | None = None
         #: 最近一次 read_datasheet_values 导出的数据里出现的渠道账号名。
         #: 对账时要靠它确认"读的是不是计划所属的店铺"，否则没设 active_shop 时
-        #: 会读到平台默认店铺，把每一行都判成查不到。
+        #: 会读到全部店铺混在一起的数据；按计划店铺筛一遍再比。
         self.last_export_shops: list[str] = []
         self._last_query: str = ""
         self._last_site: str = ""
